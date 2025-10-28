@@ -1,0 +1,6 @@
+
+在 802.11 的术语中，上面提到的接入点 AP 就是基本服务集内的基站 (base station)。
+当网络管理员安装 AP 时，必须为该 AP 分配一个不超过 32 字节的服务集标识符 SSID (Service Set IDentifier) 和一个通信信道。
+SSID 其实就是指使用该 AP 的无线局域网的名字。
+一个基本服务集 BSS 所覆盖的地理范围叫做一个基本服务区 BSA (Basic Service Area)。
+基本服务区 BSA 和无线移动通信的蜂窝小区相似。

@@ -1,0 +1,6 @@
+
+在 P2P 系统中，应怎样构建分布式的 P2P 数据库? 让每个对等方都拥有所有对等方IP地址的列表是不可行的。
+让所有成对出现的 (资源名 K, IP地址N) 随机地分散到各对等方也是不可行的。
+因为这将使查找对象的次数过大，无法使用。
+现在广泛使用的索引和查找技术叫做分布式散列表DHT(Distributed Hash Table)o DHT  也可译为分布式哈希表，它是由大量对等方共同维护的散列表。
+基于 DHT 的具体算法己有不少， 如 Chord, Pastry, CAN (Content Addressable Network), 以及Kademilia 等。

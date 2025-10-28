@@ -1,0 +1,5 @@
+这时可使用委托代理(Proxy agent)。委托代理能提供如协议转换和过滤操作等功能对被管对象进行管理。
+
+SNMP的网络管理由三个部分组成，即SNMP本身、管理信息结构SMI(Structure of Management Information)和管理信息库MIB(Management Information Base)。下面简述这三部分的作用。
+
+SNMP定义了管理站和代理之间所交换的分组格式。

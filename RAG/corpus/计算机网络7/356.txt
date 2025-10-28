@@ -1,0 +1,8 @@
+
+Content-Id: 邮件的唯一标识符。
+Content-Transfer-Encoding: 在传送时邮件的主体是如何编码的。
+Content-Type: 说明邮件主体的数据类型和子类型。
+上述的前三项的意思很清楚，因此下面只对后两项进行介绍。
+
+内容传送编码
+下面介绍三种常用的内容传送编码（Content-Transfer-Encoding）。

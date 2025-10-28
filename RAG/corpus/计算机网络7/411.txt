@@ -1,0 +1,11 @@
+
+例如 O 表示 noError (一切正常〉， ] 表示 tooBig〈代理无法把回答装入到一个 SNMP 报文之中)，2 表示 noSuchName〈操作指明了一个不存在的变量)，3 表示badValue (无效值或无效语法), 等等[RFC 3416]o
+
+差错索引(e"or index) 在请求报文中， 这个字段是零。
+当代理进程响应时， 若出现 noSuchName，badValue 或 readOnIy 的差错，代理进程就设置一个整数， 指明有差错的变量在变量列表中的偏移。
+
+变量绑定(va贞able-bindings) 指明一个或多个变量的名和对应的值。
+在请求报文中，变量的值应忽略〔类型是NULL〉。
+
+
+为了大致了解 ASN.1 给出的定义的形式， 下面举出定义 GetRequest-PDU 的例子。

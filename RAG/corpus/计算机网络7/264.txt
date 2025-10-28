@@ -1,0 +1,8 @@
+
+XML 不是要替换 HTML，而是对 HTML 的补充。
+XML 标记由文档的作者定义，并且是无限制的。
+HTML标记则是预定义的; HTML 作者只能使用当前 HTML 标准所支持的标记。
+
+
+另一种语言 XHTML (Extensible HTML)是可扩展超文本标记语言，它与HTML 4.01几乎是相同的。
+但 XHTML 是更严格的 HTML 版本，也是一个 W3C 标准(2000 年 1 月制定)，是作为一种 XML 应用被重新定义的 HTML，并将逐渐取代 HTML。

@@ -1,0 +1,18 @@
+邮件中第一部分的注解说明第二部分含有一张照片。
+
+From:xiexiren@tsinghua.org.cn To:xyz@163.com    MIME—Version: 1.0
+Content-Type: multipart/mixed;boundary=qwertyuiop
+
+--qwertyuiop
+XYZ:
+你要的图片在此邮件中,  收到后请回信。
+谢希仁
+--qwertyuiop
+Content-Type: image/gif
+Content-Transfer-Encoding: base64
+...data for the image(图像的数据)…
+--qwertyuiop--
+上面最后一行表示 boundary 的字符串后面还有两个连字符 “--”， 表示整个 multipart 的结束。
+
+动态主机配置协议 DHCP
+为了把协议软件做成通用的和便于移植的, 协议软件的编写者不会把所有的细节都固定在源代码中。相反，他们把协议软件参数化。

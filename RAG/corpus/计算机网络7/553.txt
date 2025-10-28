@@ -1,0 +1,6 @@
+
+IKEv2 以另外三个协议为基础: (1)Oakley_是个密钥生成协议[RFC 2412]。
+安全密钥交换机制SKEME (Secure Key  Exchange Mechanism)是用于密钥交换的协议。
+它利用公钥加密来实现密钥交换协议中的实体鉴别。
+互联网安全关联和密钥菅理协议 ISAKMP (Internet Secure Association and Key Management Protocol) 一一用于实现 IKE 中定义的密钥交换， 使IKE 的交换能够以标准化、格式化的报文创建安全关联SA。
+关于IKE 的深入介绍可参阅有关文档， 如RFC4945和RPC 7427（都是建议标准)。

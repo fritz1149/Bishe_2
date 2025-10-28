@@ -1,0 +1,6 @@
+
+但当运输层采用无连接的UDP协议时，这种逻辑通信信道仍然是一条不可靠信道。
+运输层的两个主要协议TCP/IP运输层的两个主要协议都是互联网的正式标准，即：用户数据报协议UDP(User Datagram Protocol)[RFC 768]传输控制协议TCP(Transmission Control Protocol)[RFC 793]按照OSI的术语，两个对等运输实体在通信时传送的数据单位叫做运输协议数据单元TPDU(Transport Protocol Data Unit)。
+但在TCP/IP体系中，则根据所使用的协议是TCP或UDP，分别称之为TCP报文段(segment)或UDP用户数据报。
+UDP在传送数据之前不需要先建立连接。
+远地主机的运输层在收到UDP报文后，不需要给出任何确认。
