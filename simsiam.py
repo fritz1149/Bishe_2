@@ -106,8 +106,10 @@ def get_bert(args):
     bert = BERT(args)
     return bert, args.hidden_size
 
-def mlp_mapper(h_dim, arch, bn_end=False):
-    arch = f"{h_dim}-{arch}-{h_dim}"
+def mlp_mapper(h_dim, arch, bn_end=False, h_dim2=None):
+    if h_dim2 is None:
+        h_dim2 = h_dim
+    arch = f"{h_dim}-{arch}-{h_dim2}"
     f = list(map(int, arch.split('-')))
     layers = []
     for i in range(len(f) - 2):
@@ -207,9 +209,10 @@ def resume(net, optimizer):
     return epoch, best_loss
 
 def save_checkpoint(state, is_best, filename="checkpoint.pt"):
-    import time
-    start_time = time.time()
+    # import time
+    # start_time = time.time()
     path = os.path.join(args.save_dir, filename)
+    os.makedirs(args.save_dir, exist_ok=True)
     best_path = os.path.join(args.save_dir, "best_checkpoint.pt")
     
     torch.save(state, path)
@@ -220,9 +223,9 @@ def save_checkpoint(state, is_best, filename="checkpoint.pt"):
             os.remove(best_path)
         os.link(path, best_path)
     
-    end_time = time.time()
-    print(f"保存 checkpoint 用时: {end_time - start_time:.4f} 秒")
-    sys.stdout.flush()
+    # end_time = time.time()
+    # print(f"保存 checkpoint 用时: {end_time - start_time:.4f} 秒")
+    # sys.stdout.flush()
     return
 
 ########################################
@@ -247,11 +250,11 @@ def save_checkpoint(state, is_best, filename="checkpoint.pt"):
 @torch.no_grad()
 def eval(net, args):
     def _load_data(args):
-        from custom_datasets import ContrastiveDataset
+        from custom_datasets import CustomDataset
         from torch.utils.data import random_split
         from custom_datasets import collate_ContrastiveDataset_test
 
-        dataset = ContrastiveDataset(args.test_dir)
+        dataset = CustomDataset(args.test_dir)
         classes = len(dataset.id2label)
         total_len = len(dataset)
         len_8 = int(total_len * 0.8)
@@ -316,7 +319,7 @@ def eval(net, args):
         features_bank_list = [torch.zeros_like(features_bank) for _ in range(dist.get_world_size())]
         labels_bank_list = [torch.zeros_like(labels_bank) for _ in range(dist.get_world_size())]
         
-        print(get_rank(), "features_bank.shape", features_bank.shape, "labels_bank.shape", labels_bank.shape)
+        # print(get_rank(), "features_bank.shape", features_bank.shape, "labels_bank.shape", labels_bank.shape)
 
         dist.all_gather(features_bank_list, features_bank)
         dist.all_gather(labels_bank_list, labels_bank)
@@ -394,8 +397,8 @@ def main(args):
 
     optimizer = torch.optim.SGD(optims_params, lr=args.base_lr, momentum=args.momentum, weight_decay=args.wd)    
     # dataset = datasets.ImageFolder(args.train_dir, augment())
-    from custom_datasets import ContrastiveDataset
-    dataset = ContrastiveDataset(args.train_dir)
+    from custom_datasets import CustomDataset
+    dataset = CustomDataset(args.train_dir)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
     scaler = torch.amp.GradScaler()
     from custom_datasets import collate_ContrastiveDataset
@@ -424,6 +427,7 @@ def main(args):
         
         net.train()
         lr = adjust_learning_rate(optimizer, epoch)
+        step_count_of_epoch = len(loader)
         for step, (x1, x1_mask_len, x2, x2_mask_len, label) in enumerate(loader, start=epoch*len(loader)):
             # attention_mask中，1的位置是[0, x_mask_len)
             attention_mask_1 = torch.zeros_like(x1)
@@ -437,6 +441,7 @@ def main(args):
             global_attention_mask_2 = torch.zeros_like(x2)
             global_attention_mask_1[:, 0] = 1
             global_attention_mask_2[:, 0] = 1
+            # print(x1.shape, attention_mask_1.shape, global_attention_mask_1.shape)
             x1 = (
                 x1.to(args.device, non_blocking=True),
                 attention_mask_1.to(args.device, non_blocking=True),
@@ -463,7 +468,7 @@ def main(args):
             losses.update(loss.item(), label.size(0))
             if args.is_master and step % args.log_freq == 0:
                 current_time = time.time()
-                print(f"Epoch: {epoch}, Step: {step}, Loss: {losses.avg:.4f}, Time: {current_time - last_logging:.2f}s")
+                print(f"Epoch: {epoch}, Step: {step}/{step_count_of_epoch*(epoch+1)}, Loss: {losses.avg:.4f}, Time: {current_time - last_logging:.2f}s")
                 last_logging = current_time
                 import sys
                 sys.stdout.flush()

@@ -16,17 +16,18 @@ class Longformer(nn.Module):
         x = self.fc(x)
         return x
 
+
+# TODO：分成三种，初始化、加载模型、空模型。初始化的要从longformer借position_embeddings，空模型仅是结构、为了加载模型做铺垫
 def get_longformer(args):
     # 获取tokenizer
-    if isinstance(args.tokenizer, str):
-        from uer.uer.utils import str2tokenizer
-        tokenizer = str2tokenizer[args.tokenizer](args)
-        args.tokenizer = tokenizer
+    import os
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    from preprocess.utils import _Qwen3VL_tokenizer
+    tokenizer, _, _, _, _, _ = _Qwen3VL_tokenizer()
 
     # 获取模型
     from transformers import AutoConfig, AutoModel
     config = AutoConfig.from_pretrained("./longformer-base-4096")
-    # 举例：把词表扩大到 50k（仅作演示）
     new_model = AutoModel.from_config(config)
 
     # 获取position_embeddings
@@ -39,7 +40,7 @@ def get_longformer(args):
 
     hidden = config.hidden_size  # 768
     # 新建一个更小词表的 embedding 层
-    new_token_emb = nn.Embedding(len(args.tokenizer.vocab), hidden)
+    new_token_emb = nn.Embedding(len(tokenizer.vocab), hidden)
     nn.init.normal_(new_token_emb.weight, mean=0.0, std=0.02)
     with torch.no_grad():
         new_model.embeddings.word_embeddings = new_token_emb
@@ -53,7 +54,7 @@ def get_longformer_with_projector(args):
         from simsiam import mlp_mapper
         projector = mlp_mapper(hidden_size, args.projector_arch, bn_end=False)
     elif args.projector == 'linear':
-        projector = nn.Linear(hidden_size, hidden_size)
+        projector = nn.Linear(hidden_size, args.linear_output_dim)
     else:
         raise ValueError(f"Unknown projector: {args.projector}")
     model.fc = projector

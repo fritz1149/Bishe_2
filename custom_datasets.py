@@ -9,14 +9,14 @@ import torch
 from torch.utils.data import Dataset
 
 
-class ContrastiveDataset(Dataset):
+class CustomDataset(Dataset):
     """
-    对比学习数据集，用于加载 generate_contrastive_dataset 生成的数据。
+    自定义数据集，用于加载 generate_custom_dataset 生成的数据。
     
     数据格式：
         每个样本为字典: {"lines": [payload1, payload2], "label": int}
         - lines: 包含两个 payload 字符串的列表
-        - label: 类别标签 (1=同burst内, 2=同流不同burst)
+        - label: 类别标签 (1=同流不同burst, 2=同burst内, 3=同流不同burst)
     
     目录结构：
         data_path/
@@ -157,9 +157,93 @@ def collate_ContrastiveDataset(batch, args):
 
     return torch.tensor(x0), torch.tensor(x0_mask_len), torch.tensor(x1), torch.tensor(x1_mask_len), torch.tensor(y)
 
+#TODO 未完善
+def collate_ContrastiveDataset2(batch):
+    non_payload_ids1 = [item[0][0] for item in batch]
+    payload_ids1 = [item[0][1] for item in batch]
+    position_ids1 = [item[0][2] for item in batch]
+    non_payload_ids2 = [item[0][3] for item in batch]
+    payload_ids2 = [item[0][4] for item in batch]
+    position_ids2 = [item[0][5] for item in batch]
+
+    def process(non_payload_ids, payload_ids, position_ids):
+        seq_lens = [len(npids)+len(pids)+1 for npids, pids in zip(non_payload_ids, payload_ids)]
+        max_seq_len = max(seq_lens)
+        input_ids = []
+        for npids, pids in zip(non_payload_ids, payload_ids):
+            input_seq = npids + pids + [1]
+            pad_len = max_seq_len - len(input_seq)
+            input_seq += [0] * pad_len
+            input_ids.append(input_seq)
+
+
+    return torch.tensor(non_payload_ids1), torch.tensor(payload_ids1), torch.tensor(position_ids1), torch.tensor(non_payload_ids2), torch.tensor(payload_ids2), torch.tensor(position_ids2)
+
 def collate_ContrastiveDataset_test(batch):
     x = [item[0][0] for item in batch]
     x_mask_len = [item[0][1] for item in batch]
     y = [item[1] for item in batch]
 
     return torch.tensor(x), torch.tensor(x_mask_len), torch.tensor(y)
+
+def collate_LLMDataset(batch):
+    PAD_ID = 151643
+    IMAGE_PAD_ID = 151655
+    x_ids = [item[0][0] for item in batch]
+    y_ids = [item[0][1] for item in batch] # [batch_size, seq_len_sample_1]
+    payloads = [item[0][2] for item in batch] # [batch_size, row_num_sample, (1500, 1500, 1500)]
+    position_ids = [item[0][3] for item in batch] # [batch_size, 3, total_seq_len_sample_1+total_seq_len_sample_2]
+    labels = [item[1] for item in batch] # [batch_size]
+    # import sys
+    # # print("x_ids_len:", len(x_ids[0]), "y_ids_len:", len(y_ids[0]))
+    # sys.stdout.flush()
+
+    for i, item in enumerate(payloads):
+        if len(item) == 0:
+            payloads[i] = None
+            continue
+        payload_ids = torch.tensor([x[0] for x in item])
+        attention_mask = torch.tensor([x[1] for x in item])
+        global_attention_mask = torch.tensor([x[2] for x in item])
+        payloads[i] = (payload_ids, attention_mask, global_attention_mask)
+
+    # 计算每个样本的总长度
+    seq_lens = [
+        len(x_ids) + len(y_ids)
+        for x_ids, y_ids in zip(x_ids, y_ids)
+    ]
+    max_seq_len = max(seq_lens)
+
+    input_ids = []
+    target_labels = []
+    for x_ids, y_ids in zip(x_ids, y_ids):
+        input_seq = x_ids+y_ids
+        # 补齐
+        pad_len = max_seq_len - len(input_seq)
+        input_seq += [PAD_ID] * pad_len
+        input_ids.append(input_seq)
+
+        # 构造label，非label部分-100
+        label_prefix = [-100] * len(x_ids)
+        label_suffix = [-100] * pad_len
+        target_labels.append(label_prefix + y_ids + label_suffix)
+
+    input_ids = torch.tensor(input_ids)
+    labels_ids = torch.tensor(target_labels)
+    # payload_ids = torch.tensor(payload_ids) # payload这里每个样本的序列长度不一样
+    for i, position_ids_ in enumerate(position_ids):
+        start = position_ids_.max().item()+1
+        position_ids[i] = torch.cat([position_ids_, torch.arange(start, start+max_seq_len-position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
+    position_ids = torch.stack(position_ids, dim=1)
+    attention_mask = (input_ids != PAD_ID).long()
+    assert position_ids.shape[0] == 3 and position_ids.shape[1] == input_ids.shape[0] and position_ids.shape[2] == max_seq_len
+
+    # from preprocess.utils import _ids_to_str
+    # print("input_ids:",_ids_to_str(input_ids[0], type="qwen3vl"))
+    # print("input_ids_len:",len(input_ids[0]))
+    # first_not_minus_100 = (labels_ids[0] != -100).nonzero()[0].item()
+    # print("input_ids_label_part:", _ids_to_str(input_ids[0][first_not_minus_100:], type="qwen3vl"))
+    # print("label_ids_label_part:", _ids_to_str(labels_ids[0][first_not_minus_100:], type="qwen3vl"))
+    # sys.stdout.flush()
+    
+    return input_ids, labels_ids, payloads, position_ids, attention_mask, labels

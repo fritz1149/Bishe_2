@@ -16,11 +16,9 @@ class BM25Retriver(BaseRetriver):
 
     def init(self):
         db_path = Path(self.db)
-        if db_path.exists()：
+        if db_path.exists():
             self.retriever = bm25s.BM25.load(f"{self.db}_{self.tokenizer}_index", load_corpus=True)
         else:
             corpus_tokens = load_corpus(self.db, self.tokenizer)
             self.retriever.index(corpus_tokens)
             self.retriever.save(f"{self.db}_{self.tokenizer}_index")
-        
-        
