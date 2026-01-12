@@ -173,7 +173,7 @@ def generate_contrastive_dataset(tmp_path: str, dest_path: str, k1: int = 10000,
     gc.collect()
 
 #TODO: 未完善
-def generate_contrastive_dataset_2(preprocess_path: str, dest_path: str, k1: int = 10000, k2: int = 1000):
+def generate_contrastive_dataset_2(preprocess_path: str, dest_path: str, k1: int = 10000, k2: int = 1000, lines_used: int = 5, num_threads: int = 4):
     import os
     from collections import defaultdict
 
@@ -184,6 +184,7 @@ def generate_contrastive_dataset_2(preprocess_path: str, dest_path: str, k1: int
         用.pcap之前的部分为key，将一样的key对应的文件名放到字典的该key下的列表
         """
         pcap_groups = defaultdict(list)
+        txt_labels = defaultdict(list)
         for label in os.listdir(preprocess_path):
             label_dir = os.path.join(preprocess_path, label)
             if not os.path.isdir(label_dir):
@@ -191,39 +192,235 @@ def generate_contrastive_dataset_2(preprocess_path: str, dest_path: str, k1: int
             for fname in os.listdir(label_dir):
                 if not fname.endswith('.txt'):
                     continue
+                txt_labels[label].append(os.path.join(label_dir, fname))
                 pcap_pos = fname.find('.pcap')
                 if pcap_pos != -1:
-                    key = fname[:pcap_pos]
-                    pcap_groups[key].append(os.path.join(label_dir, fname))
-        return pcap_groups
-    groups = collect_pcap_groups(preprocess_path)
+                    pcap_name = fname[:pcap_pos]
+                    pcap_protocol = fname[pcap_pos+6:pcap_pos+9]
+                    if pcap_protocol != "TCP" and pcap_protocol != "UDP":
+                        print("unknown protocol: ", pcap_protocol)
+                        continue
+                    pcap_groups[f"{pcap_name}_{pcap_protocol}"].append(os.path.join(label_dir, fname))
+        return pcap_groups, txt_labels
+    groups, txt_labels = collect_pcap_groups(preprocess_path)
+
+    # INSERT_YOUR_CODE
+    for key, value in groups.items():
+        print(f"key: {key}, value length: {len(value)}")
 
     pcap_with_ge2_flows = [(key, len(value)) for key, value in groups.items() if len(value) >= 2]
 
     import random
-    from utils import _build_table, _position_ids, _flat_table, _dump_in_chunks
+    import gc
+    import pickle
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from tqdm import tqdm
+    from .utils import _LM_input, _dump_in_chunks
+    
+    # 并行处理参数配置
+    samples_per_thread = k1 // num_threads + (1 if k1 % num_threads > 0 else 0)  # 每个线程处理的样本数
+    save_interval = 1000  # 每隔多少个样本存储一次
+    
     weights = [n*(n-1) for _, n in pcap_with_ge2_flows]
-    samples = []
-    for _ in range(k1):
-        selected_key = random.choices(pcap_with_ge2_flows, weights=weights, k=1)[0][0]
-        files = groups[selected_key]
-        flow1, flow2 = random.sample(files, 2)
-        lines1 = open(flow1, "r", encoding="utf-8").readlines()        
-        lines2 = open(flow2, "r", encoding="utf-8").readlines()        
-        table1 = _build_table(lines1, None, extract_payloads_from_lines=True)
-        table2 = _build_table(lines2, None, extract_payloads_from_lines=True)
-        position_ids1 = _position_ids([], [], table1, [1]) # 末尾要加一个[1]，表示label
-        position_ids2 = _position_ids([], [], table2, [1])
-        non_payload_ids1, payload_ids1 = _flat_table(table1)
-        non_payload_ids2, payload_ids2 = _flat_table(table2)
-        samples.append({
-            "data": (non_payload_ids1, payload_ids1, position_ids1, non_payload_ids2, payload_ids2, position_ids2),
-            "label": 1
-        })
-    random.shuffle(samples)
+    
+    # 为每个线程生成独立的随机种子
+    thread_seeds = [random.randint(0, 2**31 - 1) for _ in range(num_threads)]
 
-    os.makedirs(dest_path, exist_ok=True)
-    _dump_in_chunks(samples, dest_path, k1, name="contrastive")
+    def generate_sample(lines):
+        nonlocal lines_used
+        lines_used_here = lines_used
+        sample = _LM_input(lines[:lines_used_here], None, None, [], [], [], label=1, extract_payloads_from_lines=True, biased_avoid=True)
+        while sample["data"][-1].shape[1] > 4096 and lines_used_here > 0:
+            lines_used_here -= 2
+            sample = _LM_input(lines[:lines_used_here], None, None, [], [], [], label=1, extract_payloads_from_lines=True, biased_avoid=True)
+        if sample["data"][-1].shape[1] > 4096:
+            raise Exception(f"样本长度始终大于4096: {lines}")
+        return sample
+    
+    def worker_thread(thread_id, num_samples, start_chunk_idx, seed, pbar):
+        """
+        工作线程函数，处理指定数量的样本并定期存储
+        
+        Args:
+            thread_id: 线程ID
+            num_samples: 该线程需要处理的样本数量
+            start_chunk_idx: 该线程存储块的起始编号
+            seed: 该线程的随机数种子
+            pbar: 共享的tqdm进度条实例
+        """
+        # 为每个线程创建独立的随机数生成器，避免竞争
+        import random
+        thread_random = random.Random(seed)
+        
+        local_samples = []
+        chunk_idx = start_chunk_idx
+        chunks_written = 0
+        
+        try:
+            for local_idx in range(num_samples):
+                # 选择key和文件
+                selected_key = thread_random.choices(pcap_with_ge2_flows, weights=weights, k=1)[0][0]
+                files = groups[selected_key]
+                flow1, flow2 = thread_random.sample(files, 2)
+                
+                # 读取文件
+                with open(flow1, "r", encoding="utf-8") as f:
+                    lines1 = f.readlines()[:lines_used]
+                with open(flow2, "r", encoding="utf-8") as f:
+                    lines2 = f.readlines()[:lines_used]
+                
+                # 生成样本
+                try:
+                    sample1 = generate_sample(lines1)
+                    sample2 = generate_sample(lines2)
+                except Exception as e:
+                    import traceback
+                    pbar.write(f"生成样本出错: {e}")
+                    tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                    pbar.write(tb_str)
+                    continue
+                sample = {
+                    "data": [sample1["data"], sample2["data"]],
+                    "label": 1
+                }
+                local_samples.append(sample)
+                
+                # 更新进度条（线程安全）
+                pbar.update(1)
+                
+                # 每隔save_interval个样本存储一次
+                if len(local_samples) >= save_interval:
+                    # 存储当前批次
+                    file_name = f"contrastive_part_{chunk_idx:05d}.pkl"
+                    file_path = os.path.join(dest_path, "train", file_name)
+                    with open(file_path, "wb") as fout:
+                        pickle.dump(local_samples, fout)
+                    
+                    chunks_written += 1
+                    chunk_idx += 1
+                    
+                    # 清理内存
+                    del local_samples
+                    local_samples = []
+                    gc.collect()
+            
+            # 处理剩余的样本
+            if len(local_samples) > 0:
+                file_name = f"contrastive_part_{chunk_idx:05d}.pkl"
+                file_path = os.path.join(dest_path, "train", file_name)
+                with open(file_path, "wb") as fout:
+                    pickle.dump(local_samples, fout)
+                chunks_written += 1
+                del local_samples
+                gc.collect()
+        except Exception as e:
+            # 如果出错，确保进度条仍然更新以反映已处理的样本
+            pbar.refresh()
+            raise e
+        
+        return thread_id, chunks_written
+    
+    os.makedirs(os.path.join(dest_path, "train"), exist_ok=True)
+    os.makedirs(os.path.join(dest_path, "test"), exist_ok=True)
+    
+    # 计算每个线程的起始块编号，确保不重叠
+    # 每个线程分配足够的编号空间，以thread_id作为前缀部分
+    max_chunks_per_thread = (samples_per_thread + save_interval - 1) // save_interval + 1  # 向上取整并加1作为缓冲
+    start_chunk_indices = [i * max_chunks_per_thread for i in range(num_threads)]
+    
+    # 创建共享的tqdm进度条
+    pbar = tqdm(total=k1, desc="生成对比样本", unit="样本")
+    
+    # 使用线程池并行处理
+    try:
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = []
+            for thread_id in range(num_threads):
+                start_idx = thread_id * samples_per_thread
+                num_samples = min(samples_per_thread, k1 - start_idx)
+                if num_samples <= 0:
+                    break
+                
+                future = executor.submit(
+                    worker_thread,
+                    thread_id,
+                    num_samples,
+                    start_chunk_indices[thread_id],
+                    thread_seeds[thread_id],
+                    pbar
+                )
+                futures.append(future)
+            
+            # 等待所有线程完成
+            for future in as_completed(futures):
+                try:
+                    thread_id, chunks_written = future.result()
+                    pbar.write(f"线程 {thread_id} 完成，写入 {chunks_written} 个块")
+                except Exception as e:
+                    pbar.write(f"线程处理出错: {e}")
+                    raise
+    finally:
+        # 确保进度条正确关闭
+        pbar.close()
+
+    # 生成测试集
+    if k2 > 0:
+        print(f"\n开始生成测试集，每个label生成 {k2} 个样本...")
+        
+        # 构建label到数字的映射（按label名称排序）
+        sorted_labels = sorted(txt_labels.keys())
+        label2id = {label: idx for idx, label in enumerate(sorted_labels)}
+        
+        # 计算实际会生成的样本总数（考虑文件数不足的情况）
+        total_test_samples = sum(min(len(txt_labels[label]), k2) for label in sorted_labels)
+        
+        test_samples = []
+        test_pbar = tqdm(total=total_test_samples, desc="生成测试集样本", unit="样本")
+        
+        for label in sorted_labels:
+            label_id = label2id[label]
+            label_files = txt_labels[label]
+            
+            # 如果文件数不足k2，则全部使用；否则随机选择k2个
+            if len(label_files) < k2:
+                selected_files = label_files
+                test_pbar.write(f"警告: label '{label}' 只有 {len(label_files)} 个文件，少于要求的 {k2} 个")
+            else:
+                selected_files = random.sample(label_files, k2)
+            
+            for file_path in selected_files:
+                try:
+                    # 读取文件
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    
+                    # 生成单个样本（data只包含一条数据，不是列表）
+                    sample = generate_sample(lines)
+                    
+                    # 测试集样本格式：data只包含一条数据，label是标签对应的数字
+                    test_sample = {
+                        "data": sample["data"],  # 只包含一条数据，不是列表
+                        "label": label_id
+                    }
+                    test_samples.append(test_sample)
+                    test_pbar.update(1)
+                    
+                except Exception as e:
+                    import traceback
+                    test_pbar.write(f"处理文件 {file_path} 时出错: {e}")
+                    tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                    test_pbar.write(tb_str)
+                    continue
+        
+        test_pbar.close()
+        
+        # 打乱测试集样本
+        random.shuffle(test_samples)
+        
+        # 保存测试集
+        print(f"保存测试集（{len(test_samples)} 个样本）到: {os.path.join(dest_path, "test")}")
+        _dump_in_chunks(test_samples, os.path.join(dest_path, "test"), -1, name="test")
+        print(f"测试集保存完成！样本数: {len(test_samples)}")
 
 def generate_alignment_dataset_1(tmp_path: str, dest_path: str, k1: int = 10000, k2: int = 1000, k3: int = 1000, k4: int = 1000, k5: int = 1000, k6: int = 1000, test_ratio: float = 0.1, 
     packet_num_in_flow: int = 10):
@@ -665,7 +862,7 @@ def generate_alignment_dataset_1(tmp_path: str, dest_path: str, k1: int = 10000,
                 continue
             column_num = len(table)
             row_num = len(table[0])
-            label_text = f"{row_num},{column_num}"
+            label_text = f"{row_num},{column_num}<|im_end|>"
             label_ids = _str_to_ids(label_text, type="qwen3vl")[0]
             sample = _LM_input(None, None, flow_type, label_ids, prompt_ids, prompt2_ids, label=6, _build_table_result=(table, payload_bert_ids))
             if sample["data"][-1].shape[1] > 4096:
@@ -1068,25 +1265,26 @@ def generate_alignment_dataset_2(
         gc.collect()
     close_dbs(dbs)
 
-
-def generate_finetuning_dataset(preprocess_path: str, dest_path: str, k: int = 500, packet_num_in_flow: int = 5):
+def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 500, packet_num_in_flow: int = 5):
     """
-    从preprocess_path中对每个label读取k个文件，每个文件代表一个流。
-    目录结构: preprocess_path/label_name/*.txt
+    从preprocess_path中对每个label读取k个文件，按照和generate_finetuning_dataset一样的逻辑生成原始pcap文件名称的记录。
+    每个label的目录下生成三个txt文件（train.txt, val.txt, test.txt），比例为8:1:1。
+    每个pcap名称占一行，每个label处理完毕后整理内存。
 
     Args:
-        preprocess_path (str): 预处理文件的根目录
-        dest_path (str): 保存微调数据集的目的地目录
+        preprocess_path (str): 预处理文件的根目录，目录结构: preprocess_path/label_name/*.txt
+        dest_path (str): 保存catalog的目的地目录，每个label会在dest_path/label_name/下生成train.txt, val.txt, test.txt
         k (int): 每个标签最多采集的文件数量
+        packet_num_in_flow (int): 每个流包含的包数量
     """
     import os
     import random
     import shutil
-    from .utils import _build_table, _dump_in_chunks, _LM_input
+    from .utils import _LM_input, _str_to_ids
     from tqdm import tqdm
     import sys
     import gc
-    import torch
+    
     # 确保目标目录存在
     os.makedirs(dest_path, exist_ok=True)
 
@@ -1094,7 +1292,7 @@ def generate_finetuning_dataset(preprocess_path: str, dest_path: str, k: int = 5
     label_names = [name for name in os.listdir(preprocess_path)
                    if os.path.isdir(os.path.join(preprocess_path, name))]
 
-    from .utils import _str_to_ids, _position_ids, _flat_table
+    # 准备prompt（和generate_finetuning_dataset一样的逻辑）
     system_prompt = """<|im_start|>system
 你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|> """
     prompt = system_prompt + f"""
@@ -1107,66 +1305,195 @@ def generate_finetuning_dataset(preprocess_path: str, dest_path: str, k: int = 5
 <|im_start|>assistant
 给定流的类别是："""
     prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
-    train_batch_idx = 0
-    test_batch_idx = 0
+    
     for label in label_names:
         label_ids = _str_to_ids(label+"<|im_end|>", type="qwen3vl")[0]
         label_dir = os.path.join(preprocess_path, label)
         if not os.path.isdir(label_dir):
             continue
+        
         # 收集.txt文件
         file_list = [f for f in os.listdir(label_dir) if f.endswith('.txt')]
         if not file_list:
             continue
-        # 随机采样k个
-        sampled_files = random.sample(file_list, min(k*5, len(file_list)))
-        batch_size = 50  # 可以根据实际需要调整批大小
-        samples = []
+        
+        # 随机采样k*5个文件（和generate_finetuning_dataset一样的逻辑）
+        if len(file_list) < 10:
+            continue
+        random.shuffle(file_list)
+        sampled_files = file_list
+        
+        # 收集有效的pcap文件名
+        pcap_names = []
         sample_num = 0
-        for filename in tqdm(sampled_files, desc=f"生成{label}样本", file=sys.stdout):
+        
+        for filename in tqdm(sampled_files, desc=f"处理{label}文件", file=sys.stdout):
+            # 按照和generate_finetuning_dataset一样的逻辑检查文件
             lines = open(os.path.join(label_dir, filename), "r", encoding="utf-8").readlines()
             if len(lines) < 3:
                 continue
-            lines = lines[:packet_num_in_flow]
-            try:
-                sample = _LM_input(lines, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
-            except:
-                continue
-            if sample["data"][-1].shape[1] > 4096:
-                continue
-            samples.append(sample)
+            # lines = lines[:packet_num_in_flow]
+            # try:
+            #     sample = _LM_input(lines, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+            # except:
+            #     continue
+            # if sample["data"][-1].shape[1] > 4096:
+            #     continue
+            
+            # 提取pcap文件名（和generate_finetuning_dataset一样的逻辑）
+            base = filename.rsplit('.', 1)[0]
+            pcapname = base + ".pcap"
+            pcap_names.append(pcapname)
             sample_num += 1
-            if len(samples) >= batch_size:
-                # 将samples划分为训练集和测试集，并分别存储
-                split_ratio = 0.9  # 80% 训练，20% 测试
-                num_train = int(len(samples) * split_ratio)
-                train_samples = samples[:num_train]
-                test_samples = samples[num_train:]
-
-                # 保存，支持批量(避免单个文件过大)
-                _dump_in_chunks(train_samples, os.path.join(dest_path, "train"), -1, name=f"train_{train_batch_idx}")
-                _dump_in_chunks(test_samples, os.path.join(dest_path, "test"), -1, name=f"test_{test_batch_idx}")
-                train_batch_idx += 1
-                test_batch_idx += 1
-                print(f"已生成{label}类别的样本，共采样{len(samples)}个文件。")
-                del train_samples, test_samples
-                samples = []
-                gc.collect()
+            
             if sample_num >= k:
                 break
-            
-        if len(samples) > 1:
-            split_ratio = 0.9  # 80% 训练，20% 测试
-            num_train = int(len(samples) * split_ratio)
-            train_samples = samples[:num_train]
-            test_samples = samples[num_train:]
-            _dump_in_chunks(train_samples, os.path.join(dest_path, "train"), -1, name=f"train_{train_batch_idx}")
-            _dump_in_chunks(test_samples, os.path.join(dest_path, "test"), -1, name=f"test_{test_batch_idx}")
-            print(f"已生成{label}类别的样本，共采样{len(samples)}个文件。")
-            del train_samples, test_samples, samples
-            gc.collect()
+
+        if len(pcap_names) < 10:
+            continue
+
+        # 按8:1:1比例划分训练集、验证集、测试集
+        random.shuffle(pcap_names)  # 打乱顺序
+        total = len(pcap_names)
+        num_train = int(total * 0.8)
+        num_val = int(total * 0.1)
+        # 剩余的是测试集
+        
+        train_pcaps = pcap_names[:num_train]
+        val_pcaps = pcap_names[num_train:num_train + num_val]
+        test_pcaps = pcap_names[num_train + num_val:]
+        
+        # 为当前label创建目录
+        label_dest_dir = os.path.join(dest_path, label)
+        os.makedirs(label_dest_dir, exist_ok=True)
+        
+        # 保存三个txt文件，每个pcap名称占一行
+        with open(os.path.join(label_dest_dir, "train.txt"), "w", encoding="utf-8") as f:
+            for pcap_name in train_pcaps:
+                f.write(pcap_name + "\n")
+        
+        with open(os.path.join(label_dest_dir, "val.txt"), "w", encoding="utf-8") as f:
+            for pcap_name in val_pcaps:
+                f.write(pcap_name + "\n")
+        
+        with open(os.path.join(label_dest_dir, "test.txt"), "w", encoding="utf-8") as f:
+            for pcap_name in test_pcaps:
+                f.write(pcap_name + "\n")
+        
+        print(f"已生成{label}类别的catalog，共{total}个文件（训练集:{len(train_pcaps)}, 验证集:{len(val_pcaps)}, 测试集:{len(test_pcaps)}）")
+        
+        # 清理内存
+        del pcap_names, train_pcaps, val_pcaps, test_pcaps
+        gc.collect()
 
     print(f"每个标签采样{str(k)}个流(txt文件)，已保存到: {dest_path}")
+
+def generate_finetuning_dataset(preprocess_path: str, catalog_path: str, dest_path: str, k: int = 500, packet_num_in_flow: int = 5):
+    """
+    从catalog_path读取每个label的train.txt, val.txt, test.txt，根据其中的pcap文件名
+    从preprocess_path中读取对应的txt文件并生成微调数据集。
+
+    Args:
+        preprocess_path (str): 预处理文件的根目录，目录结构: preprocess_path/label_name/*.txt
+        catalog_path (str): catalog文件所在目录，每个label目录下有train.txt, val.txt, test.txt
+        dest_path (str): 保存微调数据集的目的地目录
+        k (int): 每个标签最多采集的文件数量（已废弃，从catalog读取）
+        packet_num_in_flow (int): 每个流包含的包数量
+    """
+    import os
+    from .utils import _dump_in_chunks, _LM_input, _str_to_ids
+    from tqdm import tqdm
+    import sys
+    import gc
+    
+    # 确保目标目录存在
+    os.makedirs(os.path.join(dest_path, "train"), exist_ok=True)
+    os.makedirs(os.path.join(dest_path, "val"), exist_ok=True)
+    os.makedirs(os.path.join(dest_path, "test"), exist_ok=True)
+
+    # 获取catalog_path下所有label子目录（必须是目录）
+    label_names = [name for name in os.listdir(catalog_path)
+                   if os.path.isdir(os.path.join(catalog_path, name))]
+
+    # 准备prompt
+    system_prompt = """<|im_start|>system
+你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|> """
+    prompt = system_prompt + f"""
+<|im_start|>user
+接下来会给出一个流量表格，包含若干个包的头部特征和统计特征，以及在最后一列的payload。请输出对应的类别。
+类别包含: {", ".join(label_names)}。
+接下来是表格：<表格开始>"""
+    prompt_ids = _str_to_ids(prompt, type="qwen3vl")[0]
+    prompt2 = """<表格结束><|im_end|>
+<|im_start|>assistant
+给定流的类别是："""
+    prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
+    
+    for label in label_names:
+        label_ids = _str_to_ids(label+"<|im_end|>", type="qwen3vl")[0]
+        label_dir = os.path.join(preprocess_path, label)
+        catalog_label_dir = os.path.join(catalog_path, label)
+        
+        assert os.path.exists(catalog_label_dir) and os.path.isdir(catalog_label_dir), f"catalog目录不存在: {catalog_label_dir}"
+        assert os.path.exists(label_dir) and os.path.isdir(label_dir), f"label目录不存在: {label_dir}"
+        
+        # 定义处理单个数据集的函数
+        def process_dataset(catalog_file, dataset_name):
+            """处理单个数据集（train/val/test）并返回样本列表"""
+            samples = []
+            with open(catalog_file, "r", encoding="utf-8") as f:
+                pcap_names = [line.strip() for line in f if line.strip()]
+            
+            for pcap_name in tqdm(pcap_names, desc=f"处理{label}{dataset_name}", file=sys.stdout):
+                # 将pcap文件名后缀换成.txt
+                txt_filename = pcap_name.rsplit('.', 1)[0] + ".txt"
+                txt_filepath = os.path.join(label_dir, txt_filename)
+                
+                assert os.path.exists(txt_filepath), f"文件不存在: {txt_filepath}"
+                lines = open(txt_filepath, "r", encoding="utf-8").readlines()
+                assert len(lines) >= 3, f"文件行数小于3: {txt_filepath}"
+                lines_used = lines[:packet_num_in_flow]
+                try:
+                    sample = _LM_input(lines_used, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                except Exception as e:
+                    import traceback
+                    error_detail = traceback.format_exc()
+                    raise Exception(f"处理{txt_filepath}时发生错误: {e}\n详细堆栈信息:\n{error_detail}")
+                if sample["data"][-1].shape[1] > 4096:
+                    lines_used = lines[:3]
+                    try:
+                        sample = _LM_input(lines_used, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                    except Exception as e:
+                        import traceback
+                        error_detail = traceback.format_exc()
+                        raise Exception(f"处理{txt_filepath}时发生错误: {e}\n详细堆栈信息:\n{error_detail}")
+                if sample["data"][-1].shape[1] > 4096:
+                    lines_used = lines[:1]
+                    try:
+                        sample = _LM_input(lines_used, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                    except Exception as e:
+                        import traceback
+                        error_detail = traceback.format_exc()
+                        raise Exception(f"处理{txt_filepath}时发生错误: {e}\n详细堆栈信息:\n{error_detail}")
+                assert sample["data"][-1].shape[1] <= 4096, f"样本长度大于4096: {txt_filepath}, pcap: {pcap_name}"
+                samples.append(sample)
+            
+            # 保存样本
+            assert len(samples) == len(pcap_names), f"样本数量不匹配: {catalog_file} {len(samples)} != {len(pcap_names)}"
+            if samples:
+                _dump_in_chunks(samples, os.path.join(dest_path, dataset_name), -1, name=f"{dataset_name}_{label}")
+        
+        # 处理三个数据集
+        datasets_config = [
+            ("train.txt", "train"),
+            ("val.txt", "val"),
+            ("test.txt", "test"),
+        ]
+        
+        for catalog_filename, dataset_name in datasets_config:
+            catalog_file = os.path.join(catalog_label_dir, catalog_filename)
+            process_dataset(catalog_file, dataset_name)
+            gc.collect()
 
 if __name__ == '__main__':
     from fire import Fire

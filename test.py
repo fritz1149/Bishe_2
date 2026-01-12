@@ -4,23 +4,40 @@ import torch
 from fire import Fire
 from accelerate import dispatch_model
 
-def main(use_long_prompt: int = 0, use_xformers: int = 0, eval_mode: int = 0, auto_dispatch: int = 1):
+def main(use_long_prompt: int = 0, use_xformers: int = 0, eval_mode: int = 0, auto_dispatch: int = 1, proposed_model: int = 0):
     use_long_prompt = bool(use_long_prompt)
     use_xformers = bool(use_xformers)
     eval_mode = bool(eval_mode)
     auto_dispatch = bool(auto_dispatch)
+    proposed_model = bool(proposed_model)
 # 加载模型和分词器
     model_name_or_path = "./Qwen3-VL-8B-Instruct"
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
-    if auto_dispatch:
-        model = Qwen3VLForConditionalGeneration.from_pretrained(model_name_or_path, trust_remote_code=True, device_map="auto")
+    if proposed_model:
+        from types import SimpleNamespace
+        args = SimpleNamespace(
+            llm= model_name_or_path,
+            test_mode=True,
+            align1_mode=False,
+            align2_mode=False,
+            finetune_mode=False,
+            eval_mode=False
+        )
+        from model import ProposeModel
+        model = ProposeModel(args)
+        model = model.to('cuda:0')
+        model.device = torch.device('cuda:0')
+        print(model.device.type)
     else:
-        model = Qwen3VLForConditionalGeneration.from_pretrained(model_name_or_path, trust_remote_code=True)
-    model.visual = nn.Identity()
+        if auto_dispatch:
+            model = Qwen3VLForConditionalGeneration.from_pretrained(model_name_or_path, trust_remote_code=True, device_map="auto")
+        else:
+            model = Qwen3VLForConditionalGeneration.from_pretrained(model_name_or_path, trust_remote_code=True)
+        model.model.visual = nn.Identity()
     if eval_mode:
         model = model.eval()
     else:
         model = model.train()
+    print(model)
 
     device_map = {
         "model.language_model.embed_tokens": "cuda:0",
@@ -39,7 +56,10 @@ def main(use_long_prompt: int = 0, use_xformers: int = 0, eval_mode: int = 0, au
     # model = dispatch_model(model, device_map="auto")
 
     # 构造简单输入
-    short_prompt = "你好，Qwen3！请介绍一下你自己。"
+    short_prompt = [
+        "你好，Qwen3！请介绍一下你自己。",
+        "你好，Qwen3！请介绍你自己擅长的方向，以及你对人工智能未来发展的看法和展望。",
+    ]
     long_prompt = (
         "你好，Qwen3-VL-8B-Instruct！现在我想通过一个非常长的文本来测试你的处理能力。"
         "以下是一段包含丰富内容的长篇文字，用于考察你的理解与生成效果："
@@ -86,7 +106,10 @@ def main(use_long_prompt: int = 0, use_xformers: int = 0, eval_mode: int = 0, au
         prompt = short_prompt
     from transformers import AutoProcessor
     processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True)
-    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": prompt[0]}]},
+        # {"role": "user", "content": [{"type": "text", "text": prompt[1]}]},
+    ]
     # messages = [
     #     {
     #         "role": "user",
@@ -110,40 +133,37 @@ def main(use_long_prompt: int = 0, use_xformers: int = 0, eval_mode: int = 0, au
     import sys
     input = _ids_to_str(inputs.input_ids[0], type="qwen3vl")
 
-    if use_xformers:
-        from transformers import AttentionInterface
-        from use_xformers_gqa import xformers_gqa_attention_forward
-        from transformers.integrations.sdpa_attention import sdpa_attention_forward
-        AttentionInterface.register("sdpa", sdpa_attention_forward)
-        AttentionInterface.register("xformers_gqa", xformers_gqa_attention_forward)
-        model.set_attn_implementation("xformers_gqa")
-
-    import torch
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()  # 重置峰值内存计数器
-    # print(inputs)
-    # INSERT_YOUR_CODE
-    # 将inputs.input_ids转为inputs_embeds, 并提取attention_mask和position_ids
-    # 假定inputs包含input_ids, attention_mask, position_ids（如果没有则生成），模型和tokenizer已加载
-    input_ids = inputs["input_ids"]
-    input_embeddings_module = model.get_input_embeddings()
-    inputs_embeds = input_embeddings_module(input_ids)
-    attention_mask = inputs.get("attention_mask", None)
-    position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).expand(3, -1).unsqueeze(0)
-    print(inputs_embeds.shape, attention_mask.shape, position_ids.shape)
-    sys.stdout.flush()
-    output = model.generate(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                max_new_tokens=512,  # 可根据需要调整
-                do_sample=False,  # 使用贪心解码
-            )
+
+    input_ids = inputs["input_ids"].to(model.device)
+    attention_mask = inputs.get("attention_mask", None).to(model.device)
+    position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).expand(3, -1).unsqueeze(0).to(model.device)
+    
+    if not proposed_model:
+        output = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    max_new_tokens=32,  # 可根据需要调整
+                    do_sample=False,  # 使用贪心解码
+                )
+    else:
+        position_ids = position_ids.transpose(0, 1)
+        output = model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            max_new_tokens=32,  # 可根据需要调整
+            do_sample=False,  # 使用贪心解码
+        )
             
     # output = model.generate(**inputs, max_new_tokens=1280, do_sample=False)
     if torch.cuda.is_available():
         peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2)
         print(f"峰值GPU内存使用量: {peak_memory:.2f} MB")
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
     result = tokenizer.decode(output[0], skip_special_tokens=False)
 
     print("Input: ", input)

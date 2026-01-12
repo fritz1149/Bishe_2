@@ -236,14 +236,10 @@ def collate_LLMDataset(batch):
         position_ids[i] = torch.cat([position_ids_, torch.arange(start, start+max_seq_len-position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
     position_ids = torch.stack(position_ids, dim=1)
     attention_mask = (input_ids != PAD_ID).long()
-    assert position_ids.shape[0] == 3 and position_ids.shape[1] == input_ids.shape[0] and position_ids.shape[2] == max_seq_len
+    assert position_ids.shape[0] == 3 
+    assert position_ids.shape[1] == input_ids.shape[0]
+    assert position_ids.shape[2] == max_seq_len and position_ids.shape[2] == input_ids.shape[1]
 
-    # from preprocess.utils import _ids_to_str
-    # print("input_ids:",_ids_to_str(input_ids[0], type="qwen3vl"))
-    # print("input_ids_len:",len(input_ids[0]))
-    # first_not_minus_100 = (labels_ids[0] != -100).nonzero()[0].item()
-    # print("input_ids_label_part:", _ids_to_str(input_ids[0][first_not_minus_100:], type="qwen3vl"))
-    # print("label_ids_label_part:", _ids_to_str(labels_ids[0][first_not_minus_100:], type="qwen3vl"))
-    # sys.stdout.flush()
-    
-    return input_ids, labels_ids, payloads, position_ids, attention_mask, labels
+    rope_deltas = position_ids.max().item()+1-input_ids.shape[1] # [batch_size]
+        
+    return input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas

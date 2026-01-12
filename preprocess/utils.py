@@ -28,6 +28,15 @@ def _Qwen3VL_tokenizer(model_path: str = "./Qwen3-VL-8B-Instruct", SEQ_LENGTH: i
         _Qwen3VL_tokenizer._cache = (tokenizer, SEQ_LENGTH, None, PAD_TOKEN, None, PAD_ID)
     return _Qwen3VL_tokenizer._cache
 
+def _Qwen3VL_embedder_tokenizer(model_path: str = "./Qwen3-Embedding-2B", SEQ_LENGTH: int = 1024):
+    if not hasattr(_Qwen3VL_embedder_tokenizer, "_cache"):
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        PAD_TOKEN = tokenizer.special_tokens_map.get("pad_token", None)
+        PAD_ID = tokenizer.convert_tokens_to_ids([PAD_TOKEN])[0]
+        _Qwen3VL_embedder_tokenizer._cache = (tokenizer, SEQ_LENGTH, None, PAD_TOKEN, None, PAD_ID)
+    return _Qwen3VL_embedder_tokenizer._cache
+
 def _cut_bursts(in_path):
     bursts = []
     with open(in_path, "r", encoding="utf-8") as fin:
@@ -98,15 +107,17 @@ tcp_segment_index = fields.index("tcp.segment")
 tcp_segment_count_index = fields.index("tcp.segment.count")
 frame_protocol_index = fields.index("frame.protocols")
 udp_srcport_index = fields.index("udp.srcport")
+udp_dstport_index = fields.index("udp.dstport")
 tcp_srcport_index = fields.index("tcp.srcport")
+tcp_dstport_index = fields.index("tcp.dstport")
 tcp_field_indexes = [i for i, field in enumerate(fields) 
     if "payload" not in field and ("frame" in field or "eth" in field or "ip" in field or "tcp" in field)]
 tcp_biased_avoid_field_indexes = [i for i, field in enumerate(fields) 
-    if "payload" not in field and "port" not in field and ("frame" in field or "ip" in field or "tcp" in field)]
+    if "payload" not in field and ("frame" in field or "ip" in field or "tcp" in field)]
 udp_field_indexes = [i for i, field in enumerate(fields) 
     if "payload" not in field and ("frame" in field or "eth" in field or "ip" in field or "udp" in field or "data" in field)]
 udp_biased_avoid_field_indexes = [i for i, field in enumerate(fields) 
-    if "payload" not in field and "port" not in field and ("frame" in field or "ip" in field or "udp" in field)]
+    if "payload" not in field and ("frame" in field or "ip" in field or "udp" in field or "data" in field)]
 # print([fields[i] for i in tcp_field_indexes])
 # print([fields[i] for i in tcp_biased_avoid_field_indexes])
 # print([fields[i] for i in udp_field_indexes])
@@ -146,7 +157,13 @@ def _str_to_ids(text: str, seq_length: int = None, type: str = "bert", CLS_front
         tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_tokenizer()
         if seq_length is None:
             seq_length = SEQ_LENGTH
+    elif type == "qwen3vl-emb":
+        tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_embedder_tokenizer()
+        if seq_length is None:
+            seq_length = SEQ_LENGTH
     tokens = tokenizer.tokenize(text)
+    # 输出tokens的长度和内容，便于调试
+    # print(f"Token count: {len(tokens)}\nTokens: {tokens}")
     if CLS_front:
         tokens = [CLS_TOKEN] + tokens
     token_len = len(tokens)
@@ -160,6 +177,8 @@ def _ids_to_str(ids, type: str = "bert"):
         tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _bert_tokenizer()
     elif type == "qwen3vl":
         tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_tokenizer()
+    elif type == "qwen3vl-emb":
+        tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_embedder_tokenizer()
     return tokenizer.decode(ids, skip_special_tokens=False)
 
 def _pad(token_ids_list, seqlen, type: str = "bert"):
@@ -167,6 +186,8 @@ def _pad(token_ids_list, seqlen, type: str = "bert"):
         tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _bert_tokenizer()
     elif type == "qwen3vl":
         tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_tokenizer()
+    elif type == "qwen3vl-emb":
+        tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_embedder_tokenizer()
     ret = [token_ids + [PAD_ID] * (seqlen - len(token_ids)) for token_ids in token_ids_list]
     # for token_ids in ret:
     #     print(len(token_ids), end="  ")
@@ -340,14 +361,36 @@ def _random_normal_ip(ip_version, ip_that_could_not_be):
         return "2606:2800:220:1:248:1893:25c8:1946"  # example.com 的IPv6
         
     else:
-        raise ValueError(f"Unsupported IP version: {ip_version}")
-    
+        print(f"Warning: Unsupported IP version: {ip_version}")
+        return _random_normal_ip("4", ip_that_could_not_be)
+
+def random_field(bits):
+    import random
+    field_max = 2**bits-1
+    field_int = random.randint(0, field_max)
+    return field_int
 
 fields_ids = [_str_to_ids(f"<{field}>", None, "qwen3vl", False, False)[0] for field in fields]
 payload_ids = _str_to_ids("<payload>", None, "qwen3vl", False, False)[0]
 tcp_payload_ids = _str_to_ids("<tcp.payload>", None, "qwen3vl", False, False)[0]
 udp_payload_ids = _str_to_ids("<udp.payload>", None, "qwen3vl", False, False)[0]
-def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, shuffle_columns: bool = False, random_drop_columns: bool = False, biased_avoid:bool = False):
+def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, shuffle_columns: bool = False, random_drop_columns: bool = False, biased_avoid:bool = False, token_type: str = "qwen3vl", payload_token_type: str = None):
+    """
+    构建表格数据
+    
+    Args:
+        token_type: 用于表格字段和标记的tokenizer类型，默认为 "qwen3vl"
+        payload_token_type: 用于payload内容的tokenizer类型，如果为None则使用token_type，默认为None
+    """
+    if payload_token_type is None:
+        payload_token_type = token_type
+    
+    # 根据token_type动态生成字段IDs
+    fields_ids_local = [_str_to_ids(f"<{field}>", None, token_type, False, False)[0] for field in fields]
+    payload_ids_local = _str_to_ids("<payload>", None, token_type, False, False)[0]
+    tcp_payload_ids_local = _str_to_ids("<tcp.payload>", None, token_type, False, False)[0]
+    udp_payload_ids_local = _str_to_ids("<udp.payload>", None, token_type, False, False)[0]
+    
     table_columnwise = []
     payload_ids_ = None
     if extract_payloads_from_lines:
@@ -361,27 +404,42 @@ def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool =
         else:
             raise ValueError(f"Unknown protocol type: {flow_type}")
     if flow_type == "TCP":
-        payload_ids_ = tcp_payload_ids
+        payload_ids_ = tcp_payload_ids_local
         valid_indexes = tcp_field_indexes if not biased_avoid else tcp_biased_avoid_field_indexes
         payload_index = tcp_payload_index
+        src_port_index = tcp_srcport_index
+        dst_port_index = tcp_dstport_index
     elif flow_type == "UDP":
-        payload_ids_ = udp_payload_ids
+        payload_ids_ = udp_payload_ids_local
         valid_indexes = udp_field_indexes if not biased_avoid else udp_biased_avoid_field_indexes
         payload_index = udp_payload_index
+        src_port_index = udp_srcport_index
+        dst_port_index = udp_dstport_index
     else:
         raise ValueError(f"Unknown protocol type: {flow_type}")
     if lines is not None:
-        table_columnwise = [[fields_ids[i]] for i in valid_indexes]
+        table_columnwise = [[fields_ids_local[i]] for i in valid_indexes]
         if biased_avoid:
             ip_dict = {}
+            port_dict = {}
         for line in lines:
             values = line.split("\t")
             if biased_avoid:
                 ip_src = values[src_index]
+                port_src = values[src_port_index]
                 ip_dst = values[dst_index]
+                port_dst = values[dst_port_index]
                 ip_version = values[ip_version_index]
                 ip_src_mask = ip_dict.get(ip_src, None)
                 ip_dst_mask = ip_dict.get(ip_dst, None)
+                port_src_mask = port_dict.get(port_src, None)
+                port_dst_mask = port_dict.get(port_dst, None)
+                if port_src_mask is None:
+                    port_src_mask = random_field(16)
+                    port_dict[port_src] = port_src_mask
+                if port_dst_mask is None:
+                    port_dst_mask = random_field(16)
+                    port_dict[port_dst] = port_dst_mask
                 if ip_src_mask is None:
                     ip_src_mask = _random_normal_ip(ip_version, ip_dst_mask)
                     ip_dict[ip_src] = ip_src_mask
@@ -390,11 +448,13 @@ def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool =
                     ip_dict[ip_dst] = ip_dst_mask
                 values[src_index] = ip_src_mask
                 values[dst_index] = ip_dst_mask
+                values[src_port_index] = port_src_mask
+                values[dst_port_index] = port_dst_mask
             if extract_payloads_from_lines:
                 payloads.append(values[payload_index])
             idx = 0
             for i in valid_indexes:
-                field_ids = _str_to_ids(f"<{values[i]}>", type="qwen3vl")[0]
+                field_ids = _str_to_ids(f"<{values[i]}>", type=token_type)[0]
                 table_columnwise[idx].append(field_ids)
                 idx += 1
         if shuffle_columns:
@@ -413,11 +473,11 @@ def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool =
         table_columnwise.append([payload_ids_])
         for payload in payloads:
             if len(payload) == 0:
-                table_columnwise[-1].append(_str_to_ids(f"<>", type="qwen3vl")[0])
+                table_columnwise[-1].append(_str_to_ids(f"<>", type=token_type)[0])
             else:
-                table_columnwise[-1].append(_str_to_ids(f"<<|image_pad|>>", type="qwen3vl")[0])
+                table_columnwise[-1].append(_str_to_ids(f"<<|image_pad|>>", type=token_type)[0])
 
-                payload_ids, valid_len = _str_to_ids(payload, 1500, "bert", True, True)
+                payload_ids, valid_len = _str_to_ids(payload, 1500, payload_token_type, True, True)
                 attention_mask_payload = [1]*valid_len+[0]*(1500-valid_len)
                 global_attention_mask_payload = [0]*1500
                 global_attention_mask_payload[0] = 1
@@ -428,7 +488,7 @@ def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool =
 def _position_ids(prompt_ids, prompt2_ids, table, label_ids):
     import torch
     prompt_position_ids = torch.arange(len(prompt_ids)).unsqueeze(0).expand(3, -1)
-    table_start = prompt_position_ids.max().item()+1
+    table_start = prompt_position_ids.max().item()+1 if len(prompt_ids) > 0 else 1
     col_start = table_start
     table_position_ids = []
     h = len(table[0])
@@ -462,9 +522,16 @@ def _flat_table(table):
     return [item for column in table for cell in column for item in cell]
 
 def _LM_input(lines, payloads, flow_type, label_ids, prompt_ids, prompt2_ids, label = None, extract_payloads_from_lines=False, shuffle_columns=False, random_drop_columns=False, biased_avoid=False,
-    _build_table_result=None):
+    _build_table_result=None, token_type: str = "qwen3vl", payload_token_type: str = None):
+    """
+    生成语言模型输入样本
+    
+    Args:
+        token_type: 用于表格字段和标记的tokenizer类型，默认为 "qwen3vl"
+        payload_token_type: 用于payload内容的tokenizer类型，如果为None则使用token_type，默认为None
+    """
     if _build_table_result is None:
-        table, payload_bert_ids = _build_table(lines, payloads, flow_type, extract_payloads_from_lines, shuffle_columns, random_drop_columns, biased_avoid)
+        table, payload_bert_ids = _build_table(lines, payloads, flow_type, extract_payloads_from_lines, shuffle_columns, random_drop_columns, biased_avoid, token_type=token_type, payload_token_type=payload_token_type)
     else:
         table, payload_bert_ids = _build_table_result
     position_ids = _position_ids(prompt_ids, prompt2_ids, table, label_ids)

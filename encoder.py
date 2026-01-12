@@ -44,7 +44,61 @@ def get_longformer(args):
     nn.init.normal_(new_token_emb.weight, mean=0.0, std=0.02)
     with torch.no_grad():
         new_model.embeddings.word_embeddings = new_token_emb
-
+    
+    # 对 new_model 进行初始化，排除已初始化的 word_embeddings 和已复制权重的 position_embeddings
+    excluded_modules = {
+        'embeddings.word_embeddings',  # 已用 normal_ 初始化
+        'embeddings.position_embeddings',  # 已从预训练模型复制权重
+    }
+    
+    def init_weights(module, name=''):
+        """递归初始化模块权重，按照以下方案：
+        1. Embedding: Normal(0, 0.02)
+        2. Q/K/V: Xavier Normal
+        3. FFN intermediate: Kaiming Normal
+        4. 其余 Linear: Xavier Normal
+        """
+        for child_name, child_module in module.named_children():
+            full_name = f"{name}.{child_name}" if name else child_name
+            
+            # 跳过已初始化或复制权重的层
+            if full_name in excluded_modules:
+                continue
+            
+            # 1. Embedding 层: Normal(0, 0.02)
+            if isinstance(child_module, nn.Embedding):
+                nn.init.normal_(child_module.weight, mean=0.0, std=0.02)
+                if child_module.padding_idx is not None:
+                    child_module.weight.data[child_module.padding_idx].zero_()
+            
+            # 2. Linear 层
+            elif isinstance(child_module, nn.Linear):
+                # 检查是否是 Q/K/V 相关的层（包括 query, key, value, query_global, key_global, value_global）
+                if any(keyword in full_name.lower() for keyword in ['query', 'key', 'value']):
+                    # Q/K/V: Xavier Normal
+                    nn.init.xavier_normal_(child_module.weight)
+                    if child_module.bias is not None:
+                        nn.init.zeros_(child_module.bias)
+                
+                # 3. FFN intermediate dense 层: Kaiming Normal
+                elif 'intermediate.dense' in full_name or (name.endswith('intermediate') and child_name == 'dense'):
+                    # 使用 fan_in 模式，nonlinearity 设为 'relu'（虽然实际是 GELU，但初始化方式类似）
+                    nn.init.kaiming_normal_(child_module.weight, mode='fan_in', nonlinearity='relu')
+                    if child_module.bias is not None:
+                        nn.init.zeros_(child_module.bias)
+                
+                # 4. 其余 Linear 层: Xavier Normal
+                else:
+                    nn.init.xavier_normal_(child_module.weight)
+                    if child_module.bias is not None:
+                        nn.init.zeros_(child_module.bias)
+            
+            # 递归处理子模块
+            elif len(list(child_module.children())) > 0:
+                init_weights(child_module, full_name)
+    
+    init_weights(new_model)
+ 
     return Longformer(new_model), hidden
 
 def get_longformer_with_projector(args):
@@ -55,6 +109,9 @@ def get_longformer_with_projector(args):
         projector = mlp_mapper(hidden_size, args.projector_arch, bn_end=False)
     elif args.projector == 'linear':
         projector = nn.Linear(hidden_size, args.linear_output_dim)
+        nn.init.xavier_normal_(projector.weight)
+        if projector.bias is not None:
+            nn.init.zeros_(projector.bias)
     else:
         raise ValueError(f"Unknown projector: {args.projector}")
     model.fc = projector

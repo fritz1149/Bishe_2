@@ -85,27 +85,6 @@ def init_distributed(args):
 #     backbone.fc = nn.Identity()
 #     return backbone, h_dim
 
-
-# TODO：加tokenizer对输入的原始字符串进行处理
-class BERT(nn.Module):
-    def __init__(self, args):
-        super(BERT, self).__init__()
-        from uer.uer.encoders import str2encoder
-        from uer.uer.embeddings import str2embedding
-        self.embedding = str2embedding['bert'](args, len(args.tokenizer.vocab))
-        self.encoder = str2encoder['transformer'](args)
-        self.fc = nn.Identity()
-    
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.encoder(x)
-        x = self.fc(x)
-        return x
-
-def get_bert(args):
-    bert = BERT(args)
-    return bert, args.hidden_size
-
 def mlp_mapper(h_dim, arch, bn_end=False, h_dim2=None):
     if h_dim2 is None:
         h_dim2 = h_dim
@@ -144,7 +123,6 @@ class SimSiam(nn.Module):
 
 def make_net(args):
     # backbone, h_dim = get_resnet()
-    # backbone, h_dim = get_bert(args)
     from encoder import get_longformer
     backbone, h_dim = get_longformer(args)
     model = SimSiam(backbone, h_dim)
@@ -162,7 +140,7 @@ def make_net(args):
 
 def adjust_learning_rate(optimizer, epoch):
     """Decay the learning rate based on schedule"""
-    init_lr = args.base_lr * args.batch_size / 256
+    init_lr = args.base_lr
     cur_lr = init_lr * 0.5 * (1. + math.cos(math.pi * epoch / args.epochs))
     for param_group in optimizer.param_groups:
         if 'fix_lr' in param_group and param_group['fix_lr']:
@@ -171,7 +149,13 @@ def adjust_learning_rate(optimizer, epoch):
             param_group['lr'] = cur_lr
     
     return cur_lr
-    
+
+def fix_predictor_lr_after_scheduler(optimizer, base_lr):
+    """在 scheduler.step() 后，恢复 predictor 的 lr 为 base_lr"""
+    for param_group in optimizer.param_groups:
+        if param_group.get('fix_lr', False):
+            param_group['lr'] = base_lr
+            
 ###########################################
 #          Logging & Checkpoints          #
 ###########################################
@@ -381,7 +365,7 @@ def main(args):
     best_loss = float("inf")
     loss_fn = nn.CosineSimilarity(dim=-1).to(device)
     net = make_net(args)
-    # print(net)
+    print(net)
     print(f"number of params: {sum(p.numel() for p in net.parameters() if p.requires_grad)}")
 
     if args.fix_pred_lr:
@@ -394,8 +378,6 @@ def main(args):
     #############
     ##   DATA  ##
     #############
-
-    optimizer = torch.optim.SGD(optims_params, lr=args.base_lr, momentum=args.momentum, weight_decay=args.wd)    
     # dataset = datasets.ImageFolder(args.train_dir, augment())
     from custom_datasets import CustomDataset
     dataset = CustomDataset(args.train_dir)
@@ -404,6 +386,20 @@ def main(args):
     from custom_datasets import collate_ContrastiveDataset
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=(sampler is None),
                 num_workers=args.workers, pin_memory=True, sampler=sampler, drop_last=True, collate_fn=lambda batch: collate_ContrastiveDataset(batch, args))
+
+    if args.optimizer == 'sgd': 
+        optimizer = torch.optim.SGD(optims_params, lr=args.base_lr, momentum=args.momentum, weight_decay=args.wd)
+    elif args.optimizer == 'adamw':
+        optimizer = torch.optim.AdamW(optims_params, lr=args.base_lr, betas=(args.beta_0, args.beta_1), eps=args.eps, weight_decay=args.wd)
+        from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+        steps_per_epoch = len(loader)
+        total_steps = args.epochs * steps_per_epoch
+        warmup_steps = args.epochs * steps_per_epoch * args.warmup
+        warmup_scheduler = LinearLR(optimizer, start_factor=0.1, total_iters=warmup_steps)
+        cosine_scheduler = CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=args.base_lr * 0.001)
+        scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_steps])
+    else:
+        raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
     if args.test_mode:
         if args.is_master:
@@ -424,9 +420,9 @@ def main(args):
     for epoch in range(start_epoch, args.epochs):
         losses = AverageMeter("Loss", ":.4f")
         if is_distributed(): sampler.set_epoch(epoch)
-        
         net.train()
-        lr = adjust_learning_rate(optimizer, epoch)
+        if args.optimizer == 'sgd':
+            adjust_learning_rate(optimizer, epoch)
         step_count_of_epoch = len(loader)
         for step, (x1, x1_mask_len, x2, x2_mask_len, label) in enumerate(loader, start=epoch*len(loader)):
             # attention_mask中，1的位置是[0, x_mask_len)
@@ -464,6 +460,9 @@ def main(args):
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+            if args.optimizer == 'adamw':
+                scheduler.step()
+                fix_predictor_lr_after_scheduler(optimizer, args.base_lr)
 
             losses.update(loss.item(), label.size(0))
             if args.is_master and step % args.log_freq == 0:
@@ -472,6 +471,7 @@ def main(args):
                 last_logging = current_time
                 import sys
                 sys.stdout.flush()
+            
 
         knn_acc = eval(net, args)
         if args.is_master:
@@ -480,7 +480,11 @@ def main(args):
             if (epoch % args.save_freq == 0) or is_best:
                 state = dict(epoch=epoch, model=net.state_dict(), optimizer=optimizer.state_dict(), best_loss=best_loss)
                 save_checkpoint(state, is_best)
-            logs = dict(epoch=epoch, loss=losses.avg, best_loss=best_loss, lr=lr, knn_acc=knn_acc)
+            # INSERT_YOUR_CODE
+            lr = []
+            for param_group in optimizer.param_groups:
+                lr.append(param_group['lr'])
+            logs = dict(epoch=epoch, loss=losses.avg, best_loss=best_loss, knn_acc=knn_acc, lr=lr)
             print(json.dumps(logs))
             print(f"Epoch {epoch} => KNN accuracy ({knn_acc:.4f} %)")
 
@@ -516,15 +520,23 @@ def add_simsiam_args(parser):
 
     # model
     parser.add_argument('--model', type=str, default='resnet50', help="主干模型名字")
-    parser.add_argument('--proj_arch', type=str, default='2048-2048', help="投影头结构")
-    parser.add_argument('--pred_arch', type=str, default='512', help="预测头结构")
+    parser.add_argument('--proj_arch', type=str, default='768-768', help="投影头结构")
+    parser.add_argument('--pred_arch', type=str, default='256', help="预测头结构")
 
     # optim
-    parser.add_argument('--base_lr', type=float, default=0.05, help="基础学习率")
-    parser.add_argument('--momentum', type=float, default=0.9, help="动量")
-    parser.add_argument('--wd', type=float, default=1e-4, help="权重衰减")
+    parser.add_argument('--optimizer', type=str, default='adamw', choices=['sgd', 'adamw'], help="优化器类型")
+    # common
+    parser.add_argument('--base_lr', type=float, default=3e-4, help="基础学习率")
+    parser.add_argument('--wd', type=float, default=0.05, help="权重衰减")
     parser.add_argument('--fix_pred_lr', action='store_true', default=True, help="预测头是否固定学习率")
-    
+    # SGD
+    parser.add_argument('--momentum', type=float, default=0.95, help="动量")
+    # AdamW
+    parser.add_argument('--warmup', type=float, default=0.1, help="Warm up value.")
+    parser.add_argument('--beta_0', type=float, default=0.9, help="AdamW中的beta_0参数")
+    parser.add_argument('--beta_1', type=float, default=0.999, help="AdamW中的beta_1参数")
+    parser.add_argument('--eps', type=float, default=1e-6, help="AdamW中的eps参数")
+
     # hardware
     parser.add_argument('--workers', type=int, default=16, help="dataloader线程数")
     parser.add_argument('--device', type=str, default='cuda', help="设备类型(cpu, cuda, mps)")
@@ -535,14 +547,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    model_opts(parser)
+    # model_opts(parser)
     # training_opts(parser)
-    optimization_opts(parser)
-    tokenizer_opts(parser)
+    # optimization_opts(parser)
+    # tokenizer_opts(parser)
     add_simsiam_args(parser)
     parser.add_argument("--weak_sample_rate", type=float, default=0.5)
     args = parser.parse_args()
-    args.vocab_path = 'config/encryptd_vocab.txt'
+    # args.vocab_path = 'config/encryptd_vocab.txt'
     args.per_device_batch_size = args.batch_size
 
     main(args)
