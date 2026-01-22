@@ -685,8 +685,8 @@ def run_text_corpus_pipeline(
         resume_linear=resume_linear,
         resume_lora0=resume_lora0,
         resume_lora1=resume_lora1,
-        align1_mode=False, align2_mode=False, test_mode=False, eval_mode=False,
-        finetune_mode=True,
+        align1_mode=False, align2_mode=False, test_mode=False, eval_mode=True,
+        finetune_mode=False,
         projector=projector
     )
     
