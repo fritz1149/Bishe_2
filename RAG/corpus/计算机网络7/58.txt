@@ -1,6 +1,0 @@
-已成为建议标准的RFC 6298推荐的a值为1/8，即0.125。用这种方法得出的加权平均往返时间RTTs就比测量出的RTT值更加平滑。
-显然，超时计时器设置的超时重传时间RTO（RetransmissionTime-Out）应略大于上面得出的加权平均往返时间RTTs。RFC6298建议使用下式计算RTO：
-
-RTO = RTTs + 4 × RTTD
-
-而RTTD是RTT的偏差的加权平均值，它与RTTs和新的RTT样本之差有关。RFC 6298建议这样计算RTTD。

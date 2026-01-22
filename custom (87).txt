@@ -1,0 +1,784 @@
+no change     /home/changc/miniconda3/condabin/conda
+no change     /home/changc/miniconda3/bin/conda
+no change     /home/changc/miniconda3/bin/conda-env
+no change     /home/changc/miniconda3/bin/activate
+no change     /home/changc/miniconda3/bin/deactivate
+no change     /home/changc/miniconda3/etc/profile.d/conda.sh
+no change     /home/changc/miniconda3/etc/fish/conf.d/conda.fish
+no change     /home/changc/miniconda3/shell/condabin/Conda.psm1
+no change     /home/changc/miniconda3/shell/condabin/conda-hook.ps1
+no change     /home/changc/miniconda3/lib/python3.12/site-packages/xontrib/conda.xsh
+no change     /home/changc/miniconda3/etc/profile.d/conda.csh
+modified      /root/.bashrc
+
+==> For changes to take effect, close and re-open your current shell. <==
+
+tmpfs                                                        40G     0   40G   0% /dev/shm
+Not using distributed mode!
+train_dir: datasets/contrastive2/30000/2mixed/train
+test_dir: datasets/contrastive2/30000/2mixed/test
+save_dir: models/traffic_embedder/30000
+log_freq: 20
+save_freq: 2
+epochs: 10
+batch_size: 8
+resume: False
+seed: None
+eval_mode: False
+train_mode: True
+eval_dir: /datasets/val/
+knn_n: 200
+knn_t: 0.2
+proj_arch: 2048-2048
+pred_arch: 512
+llm: Qwen3-VL-Embedding-2B
+projector: linear
+linear_output_dim: 2048
+optimizer: adamw
+clip_grad_norm: 1.0
+base_lr: 0.0003
+wd: 0.05
+fix_pred_lr: True
+momentum: 0.95
+warmup: 0.1
+beta_0: 0.9
+beta_1: 0.999
+eps: 1e-08
+workers: 16
+device: cuda
+distributed: False
+weak_sample_rate: 0.5
+per_device_batch_size: 8
+rank: 0
+world_size: 1
+is_master: True
+gpu: None
+SimSiam(
+  (backbone): TrafficEmbedder(
+    (text_embedder): Embedding(151936, 2048)
+    (backbone): PeftMixedModel(
+      (base_model): MixedModel(
+        (model): Qwen3VLForEmbedding(
+          (model): Qwen3VLModel(
+            (visual): Identity()
+            (language_model): Qwen3VLTextModel(
+              (embed_tokens): Embedding(151936, 2048)
+              (layers): ModuleList(
+                (0-27): 28 x Qwen3VLTextDecoderLayer(
+                  (self_attn): Qwen3VLTextAttention(
+                    (q_proj): lora.Linear(
+                      (base_layer): Linear(in_features=2048, out_features=2048, bias=False)
+                      (lora_dropout): ModuleDict(
+                        (0): Dropout(p=0.05, inplace=False)
+                      )
+                      (lora_A): ModuleDict(
+                        (0): Linear(in_features=2048, out_features=16, bias=False)
+                      )
+                      (lora_B): ModuleDict(
+                        (0): Linear(in_features=16, out_features=2048, bias=False)
+                      )
+                      (lora_embedding_A): ParameterDict()
+                      (lora_embedding_B): ParameterDict()
+                      (lora_magnitude_vector): ModuleDict()
+                    )
+                    (k_proj): lora.Linear(
+                      (base_layer): Linear(in_features=2048, out_features=1024, bias=False)
+                      (lora_dropout): ModuleDict(
+                        (0): Dropout(p=0.05, inplace=False)
+                      )
+                      (lora_A): ModuleDict(
+                        (0): Linear(in_features=2048, out_features=16, bias=False)
+                      )
+                      (lora_B): ModuleDict(
+                        (0): Linear(in_features=16, out_features=1024, bias=False)
+                      )
+                      (lora_embedding_A): ParameterDict()
+                      (lora_embedding_B): ParameterDict()
+                      (lora_magnitude_vector): ModuleDict()
+                    )
+                    (v_proj): lora.Linear(
+                      (base_layer): Linear(in_features=2048, out_features=1024, bias=False)
+                      (lora_dropout): ModuleDict(
+                        (0): Dropout(p=0.05, inplace=False)
+                      )
+                      (lora_A): ModuleDict(
+                        (0): Linear(in_features=2048, out_features=16, bias=False)
+                      )
+                      (lora_B): ModuleDict(
+                        (0): Linear(in_features=16, out_features=1024, bias=False)
+                      )
+                      (lora_embedding_A): ParameterDict()
+                      (lora_embedding_B): ParameterDict()
+                      (lora_magnitude_vector): ModuleDict()
+                    )
+                    (o_proj): lora.Linear(
+                      (base_layer): Linear(in_features=2048, out_features=2048, bias=False)
+                      (lora_dropout): ModuleDict(
+                        (0): Dropout(p=0.05, inplace=False)
+                      )
+                      (lora_A): ModuleDict(
+                        (0): Linear(in_features=2048, out_features=16, bias=False)
+                      )
+                      (lora_B): ModuleDict(
+                        (0): Linear(in_features=16, out_features=2048, bias=False)
+                      )
+                      (lora_embedding_A): ParameterDict()
+                      (lora_embedding_B): ParameterDict()
+                      (lora_magnitude_vector): ModuleDict()
+                    )
+                    (q_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                    (k_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                  )
+                  (mlp): Qwen3VLTextMLP(
+                    (gate_proj): Linear(in_features=2048, out_features=6144, bias=False)
+                    (up_proj): Linear(in_features=2048, out_features=6144, bias=False)
+                    (down_proj): Linear(in_features=6144, out_features=2048, bias=False)
+                    (act_fn): SiLUActivation()
+                  )
+                  (input_layernorm): Qwen3VLTextRMSNorm((2048,), eps=1e-06)
+                  (post_attention_layernorm): Qwen3VLTextRMSNorm((2048,), eps=1e-06)
+                )
+              )
+              (norm): Qwen3VLTextRMSNorm((2048,), eps=1e-06)
+              (rotary_emb): Qwen3VLTextRotaryEmbedding()
+            )
+          )
+        )
+      )
+    )
+    (encoder): Longformer(
+      (original_model): LongformerModel(
+        (embeddings): LongformerEmbeddings(
+          (word_embeddings): Embedding(151669, 768)
+          (token_type_embeddings): Embedding(1, 768)
+          (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (position_embeddings): Embedding(4098, 768, padding_idx=1)
+        )
+        (encoder): LongformerEncoder(
+          (layer): ModuleList(
+            (0-11): 12 x LongformerLayer(
+              (attention): LongformerAttention(
+                (self): LongformerSelfAttention(
+                  (query): Linear(in_features=768, out_features=768, bias=True)
+                  (key): Linear(in_features=768, out_features=768, bias=True)
+                  (value): Linear(in_features=768, out_features=768, bias=True)
+                  (query_global): Linear(in_features=768, out_features=768, bias=True)
+                  (key_global): Linear(in_features=768, out_features=768, bias=True)
+                  (value_global): Linear(in_features=768, out_features=768, bias=True)
+                )
+                (output): LongformerSelfOutput(
+                  (dense): Linear(in_features=768, out_features=768, bias=True)
+                  (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+                  (dropout): Dropout(p=0.1, inplace=False)
+                )
+              )
+              (intermediate): LongformerIntermediate(
+                (dense): Linear(in_features=768, out_features=3072, bias=True)
+                (intermediate_act_fn): GELUActivation()
+              )
+              (output): LongformerOutput(
+                (dense): Linear(in_features=3072, out_features=768, bias=True)
+                (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+                (dropout): Dropout(p=0.1, inplace=False)
+              )
+            )
+          )
+        )
+        (pooler): LongformerPooler(
+          (dense): Linear(in_features=768, out_features=768, bias=True)
+          (activation): Tanh()
+        )
+      )
+      (fc): Linear(in_features=768, out_features=2048, bias=True)
+    )
+    (fc): Sequential(
+      (0): Linear(in_features=2048, out_features=2048, bias=False)
+      (1): BatchNorm1d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (2): ReLU(inplace=True)
+      (3): Linear(in_features=2048, out_features=2048, bias=False)
+      (4): BatchNorm1d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (5): ReLU(inplace=True)
+      (6): Linear(in_features=2048, out_features=2048, bias=True)
+      (7): BatchNorm1d(2048, eps=1e-05, momentum=0.1, affine=False, track_running_stats=True)
+    )
+  )
+  (predictor): Sequential(
+    (0): Linear(in_features=2048, out_features=512, bias=False)
+    (1): BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (2): ReLU(inplace=True)
+    (3): Linear(in_features=512, out_features=2048, bias=True)
+  )
+)
+未找到 id2label.json（可选）
+正在从 64 个文件中加载数据...
+成功加载 60000 个样本
+/home/changc/miniconda3/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py:627: UserWarning: This DataLoader will create 16 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(
+Input ids are automatically padded to be a multiple of `config.attention_window`: 512
+Epoch: 0, Step: 0/7500, Loss: -0.0077, Time: 26.15s
+Epoch: 0, Step: 20/7500, Loss: -0.6066, Time: 276.64s
+Epoch: 0, Step: 40/7500, Loss: -0.7562, Time: 270.79s
+Epoch: 0, Step: 60/7500, Loss: -0.8234, Time: 232.73s
+Epoch: 0, Step: 80/7500, Loss: -0.8569, Time: 268.29s
+Epoch: 0, Step: 100/7500, Loss: -0.8764, Time: 266.55s
+Epoch: 0, Step: 120/7500, Loss: -0.8896, Time: 267.12s
+Epoch: 0, Step: 140/7500, Loss: -0.8992, Time: 261.74s
+Epoch: 0, Step: 160/7500, Loss: -0.9065, Time: 249.40s
+Epoch: 0, Step: 180/7500, Loss: -0.9101, Time: 231.06s
+Epoch: 0, Step: 200/7500, Loss: -0.9139, Time: 230.40s
+Epoch: 0, Step: 220/7500, Loss: -0.9176, Time: 291.62s
+Epoch: 0, Step: 240/7500, Loss: -0.9176, Time: 265.57s
+Epoch: 0, Step: 260/7500, Loss: -0.9174, Time: 257.35s
+Epoch: 0, Step: 280/7500, Loss: -0.9217, Time: 283.91s
+Epoch: 0, Step: 300/7500, Loss: -0.9262, Time: 273.30s
+Epoch: 0, Step: 320/7500, Loss: -0.9304, Time: 245.04s
+Epoch: 0, Step: 340/7500, Loss: -0.9342, Time: 272.24s
+Epoch: 0, Step: 360/7500, Loss: -0.9377, Time: 282.76s
+Epoch: 0, Step: 380/7500, Loss: -0.9408, Time: 262.76s
+Epoch: 0, Step: 400/7500, Loss: -0.9436, Time: 288.00s
+Epoch: 0, Step: 420/7500, Loss: -0.9461, Time: 233.58s
+Epoch: 0, Step: 440/7500, Loss: -0.9484, Time: 244.86s
+Epoch: 0, Step: 460/7500, Loss: -0.9506, Time: 248.04s
+Epoch: 0, Step: 480/7500, Loss: -0.9525, Time: 293.97s
+Epoch: 0, Step: 500/7500, Loss: -0.9543, Time: 256.82s
+Epoch: 0, Step: 520/7500, Loss: -0.9559, Time: 277.26s
+Epoch: 0, Step: 540/7500, Loss: -0.9574, Time: 274.08s
+Epoch: 0, Step: 560/7500, Loss: -0.9587, Time: 226.80s
+Epoch: 0, Step: 580/7500, Loss: -0.9597, Time: 252.51s
+Epoch: 0, Step: 600/7500, Loss: -0.9609, Time: 264.69s
+Epoch: 0, Step: 620/7500, Loss: -0.9621, Time: 227.94s
+Epoch: 0, Step: 640/7500, Loss: -0.9632, Time: 258.72s
+Epoch: 0, Step: 660/7500, Loss: -0.9641, Time: 240.56s
+Epoch: 0, Step: 680/7500, Loss: -0.9649, Time: 257.49s
+Epoch: 0, Step: 700/7500, Loss: -0.9657, Time: 278.25s
+Epoch: 0, Step: 720/7500, Loss: -0.9666, Time: 232.66s
+Epoch: 0, Step: 740/7500, Loss: -0.9674, Time: 248.42s
+Epoch: 0, Step: 760/7500, Loss: -0.9682, Time: 220.02s
+Epoch: 0, Step: 780/7500, Loss: -0.9689, Time: 284.15s
+Epoch: 0, Step: 800/7500, Loss: -0.9696, Time: 246.74s
+Epoch: 0, Step: 820/7500, Loss: -0.9703, Time: 245.92s
+Epoch: 0, Step: 840/7500, Loss: -0.9710, Time: 254.89s
+Epoch: 0, Step: 860/7500, Loss: -0.9716, Time: 247.14s
+Epoch: 0, Step: 880/7500, Loss: -0.9722, Time: 262.89s
+Epoch: 0, Step: 900/7500, Loss: -0.9728, Time: 268.77s
+Epoch: 0, Step: 920/7500, Loss: -0.9733, Time: 247.12s
+Epoch: 0, Step: 940/7500, Loss: -0.9738, Time: 274.66s
+Epoch: 0, Step: 960/7500, Loss: -0.9743, Time: 243.40s
+Epoch: 0, Step: 980/7500, Loss: -0.9748, Time: 285.58s
+Epoch: 0, Step: 1000/7500, Loss: -0.9753, Time: 252.05s
+Epoch: 0, Step: 1020/7500, Loss: -0.9758, Time: 258.96s
+Epoch: 0, Step: 1040/7500, Loss: -0.9762, Time: 299.53s
+Epoch: 0, Step: 1060/7500, Loss: -0.9766, Time: 278.54s
+Epoch: 0, Step: 1080/7500, Loss: -0.9769, Time: 234.36s
+Epoch: 0, Step: 1100/7500, Loss: -0.9773, Time: 271.69s
+Epoch: 0, Step: 1120/7500, Loss: -0.9777, Time: 250.02s
+Epoch: 0, Step: 1140/7500, Loss: -0.9781, Time: 251.23s
+Epoch: 0, Step: 1160/7500, Loss: -0.9784, Time: 271.69s
+Epoch: 0, Step: 1180/7500, Loss: -0.9788, Time: 253.61s
+Epoch: 0, Step: 1200/7500, Loss: -0.9791, Time: 300.29s
+Epoch: 0, Step: 1220/7500, Loss: -0.9794, Time: 281.27s
+Epoch: 0, Step: 1240/7500, Loss: -0.9797, Time: 253.52s
+Epoch: 0, Step: 1260/7500, Loss: -0.9800, Time: 253.14s
+Epoch: 0, Step: 1280/7500, Loss: -0.9803, Time: 246.08s
+Epoch: 0, Step: 1300/7500, Loss: -0.9806, Time: 231.28s
+Epoch: 0, Step: 1320/7500, Loss: -0.9809, Time: 265.29s
+Epoch: 0, Step: 1340/7500, Loss: -0.9811, Time: 265.54s
+Epoch: 0, Step: 1360/7500, Loss: -0.9814, Time: 284.95s
+Epoch: 0, Step: 1380/7500, Loss: -0.9817, Time: 273.71s
+Epoch: 0, Step: 1400/7500, Loss: -0.9819, Time: 275.29s
+Epoch: 0, Step: 1420/7500, Loss: -0.9822, Time: 302.85s
+Epoch: 0, Step: 1440/7500, Loss: -0.9824, Time: 275.33s
+Epoch: 0, Step: 1460/7500, Loss: -0.9826, Time: 247.34s
+Epoch: 0, Step: 1480/7500, Loss: -0.9828, Time: 234.07s
+Epoch: 0, Step: 1500/7500, Loss: -0.9831, Time: 238.44s
+Epoch: 0, Step: 1520/7500, Loss: -0.9832, Time: 274.32s
+Epoch: 0, Step: 1540/7500, Loss: -0.9833, Time: 271.05s
+Epoch: 0, Step: 1560/7500, Loss: -0.9835, Time: 266.56s
+Epoch: 0, Step: 1580/7500, Loss: -0.9837, Time: 233.23s
+Epoch: 0, Step: 1600/7500, Loss: -0.9839, Time: 256.37s
+Epoch: 0, Step: 1620/7500, Loss: -0.9841, Time: 264.30s
+Epoch: 0, Step: 1640/7500, Loss: -0.9843, Time: 253.96s
+Epoch: 0, Step: 1660/7500, Loss: -0.9844, Time: 249.79s
+Epoch: 0, Step: 1680/7500, Loss: -0.9846, Time: 249.68s
+Epoch: 0, Step: 1700/7500, Loss: -0.9848, Time: 240.70s
+Epoch: 0, Step: 1720/7500, Loss: -0.9850, Time: 257.40s
+Epoch: 0, Step: 1740/7500, Loss: -0.9851, Time: 259.56s
+Epoch: 0, Step: 1760/7500, Loss: -0.9853, Time: 242.23s
+Epoch: 0, Step: 1780/7500, Loss: -0.9854, Time: 241.17s
+Epoch: 0, Step: 1800/7500, Loss: -0.9856, Time: 232.35s
+Epoch: 0, Step: 1820/7500, Loss: -0.9857, Time: 277.02s
+Epoch: 0, Step: 1840/7500, Loss: -0.9859, Time: 284.45s
+Epoch: 0, Step: 1860/7500, Loss: -0.9860, Time: 243.78s
+Epoch: 0, Step: 1880/7500, Loss: -0.9861, Time: 249.29s
+Epoch: 0, Step: 1900/7500, Loss: -0.9863, Time: 228.83s
+Epoch: 0, Step: 1920/7500, Loss: -0.9864, Time: 235.15s
+Epoch: 0, Step: 1940/7500, Loss: -0.9865, Time: 267.66s
+Epoch: 0, Step: 1960/7500, Loss: -0.9867, Time: 264.32s
+Epoch: 0, Step: 1980/7500, Loss: -0.9868, Time: 274.12s
+Epoch: 0, Step: 2000/7500, Loss: -0.9869, Time: 269.81s
+Epoch: 0, Step: 2020/7500, Loss: -0.9870, Time: 276.10s
+Epoch: 0, Step: 2040/7500, Loss: -0.9871, Time: 233.03s
+Epoch: 0, Step: 2060/7500, Loss: -0.9873, Time: 252.25s
+Epoch: 0, Step: 2080/7500, Loss: -0.9873, Time: 250.00s
+Epoch: 0, Step: 2100/7500, Loss: -0.9874, Time: 236.11s
+Epoch: 0, Step: 2120/7500, Loss: -0.9874, Time: 224.45s
+Epoch: 0, Step: 2140/7500, Loss: -0.9875, Time: 270.64s
+Epoch: 0, Step: 2160/7500, Loss: -0.9875, Time: 299.76s
+Epoch: 0, Step: 2180/7500, Loss: -0.9874, Time: 245.97s
+Epoch: 0, Step: 2200/7500, Loss: -0.9875, Time: 259.18s
+Epoch: 0, Step: 2220/7500, Loss: -0.9876, Time: 250.61s
+Epoch: 0, Step: 2240/7500, Loss: -0.9877, Time: 256.80s
+Epoch: 0, Step: 2260/7500, Loss: -0.9878, Time: 253.41s
+Epoch: 0, Step: 2280/7500, Loss: -0.9879, Time: 256.34s
+Epoch: 0, Step: 2300/7500, Loss: -0.9880, Time: 259.57s
+Epoch: 0, Step: 2320/7500, Loss: -0.9881, Time: 254.59s
+Epoch: 0, Step: 2340/7500, Loss: -0.9882, Time: 279.32s
+Epoch: 0, Step: 2360/7500, Loss: -0.9883, Time: 255.45s
+Epoch: 0, Step: 2380/7500, Loss: -0.9884, Time: 256.91s
+Epoch: 0, Step: 2400/7500, Loss: -0.9885, Time: 276.31s
+Epoch: 0, Step: 2420/7500, Loss: -0.9886, Time: 240.48s
+Epoch: 0, Step: 2440/7500, Loss: -0.9886, Time: 250.02s
+Epoch: 0, Step: 2460/7500, Loss: -0.9887, Time: 305.58s
+Epoch: 0, Step: 2480/7500, Loss: -0.9888, Time: 272.82s
+Epoch: 0, Step: 2500/7500, Loss: -0.9889, Time: 266.45s
+Epoch: 0, Step: 2520/7500, Loss: -0.9890, Time: 241.34s
+Epoch: 0, Step: 2540/7500, Loss: -0.9891, Time: 318.16s
+Epoch: 0, Step: 2560/7500, Loss: -0.9892, Time: 274.76s
+Epoch: 0, Step: 2580/7500, Loss: -0.9893, Time: 289.01s
+Epoch: 0, Step: 2600/7500, Loss: -0.9893, Time: 260.03s
+Epoch: 0, Step: 2620/7500, Loss: -0.9894, Time: 268.09s
+Epoch: 0, Step: 2640/7500, Loss: -0.9895, Time: 253.88s
+Epoch: 0, Step: 2660/7500, Loss: -0.9896, Time: 276.77s
+Epoch: 0, Step: 2680/7500, Loss: -0.9897, Time: 254.16s
+Epoch: 0, Step: 2700/7500, Loss: -0.9897, Time: 271.59s
+Epoch: 0, Step: 2720/7500, Loss: -0.9898, Time: 266.33s
+Epoch: 0, Step: 2740/7500, Loss: -0.9899, Time: 240.20s
+Epoch: 0, Step: 2760/7500, Loss: -0.9900, Time: 245.35s
+Epoch: 0, Step: 2780/7500, Loss: -0.9900, Time: 244.84s
+Epoch: 0, Step: 2800/7500, Loss: -0.9901, Time: 270.91s
+Epoch: 0, Step: 2820/7500, Loss: -0.9902, Time: 244.07s
+Epoch: 0, Step: 2840/7500, Loss: -0.9902, Time: 252.53s
+Epoch: 0, Step: 2860/7500, Loss: -0.9903, Time: 255.85s
+Epoch: 0, Step: 2880/7500, Loss: -0.9904, Time: 269.82s
+Epoch: 0, Step: 2900/7500, Loss: -0.9904, Time: 261.84s
+Epoch: 0, Step: 2920/7500, Loss: -0.9905, Time: 266.95s
+Epoch: 0, Step: 2940/7500, Loss: -0.9906, Time: 257.99s
+Epoch: 0, Step: 2960/7500, Loss: -0.9906, Time: 251.78s
+Epoch: 0, Step: 2980/7500, Loss: -0.9907, Time: 241.42s
+Epoch: 0, Step: 3000/7500, Loss: -0.9908, Time: 242.27s
+Epoch: 0, Step: 3020/7500, Loss: -0.9908, Time: 262.51s
+Epoch: 0, Step: 3040/7500, Loss: -0.9909, Time: 269.91s
+Epoch: 0, Step: 3060/7500, Loss: -0.9909, Time: 260.40s
+Epoch: 0, Step: 3080/7500, Loss: -0.9910, Time: 266.45s
+Epoch: 0, Step: 3100/7500, Loss: -0.9910, Time: 232.65s
+Epoch: 0, Step: 3120/7500, Loss: -0.9911, Time: 257.73s
+Epoch: 0, Step: 3140/7500, Loss: -0.9912, Time: 255.38s
+Epoch: 0, Step: 3160/7500, Loss: -0.9912, Time: 260.12s
+Epoch: 0, Step: 3180/7500, Loss: -0.9913, Time: 273.86s
+Epoch: 0, Step: 3200/7500, Loss: -0.9913, Time: 256.79s
+Epoch: 0, Step: 3220/7500, Loss: -0.9914, Time: 278.14s
+Epoch: 0, Step: 3240/7500, Loss: -0.9914, Time: 262.97s
+Epoch: 0, Step: 3260/7500, Loss: -0.9915, Time: 234.22s
+Epoch: 0, Step: 3280/7500, Loss: -0.9915, Time: 275.85s
+Epoch: 0, Step: 3300/7500, Loss: -0.9916, Time: 251.73s
+Epoch: 0, Step: 3320/7500, Loss: -0.9916, Time: 256.07s
+Epoch: 0, Step: 3340/7500, Loss: -0.9917, Time: 290.48s
+Epoch: 0, Step: 3360/7500, Loss: -0.9917, Time: 266.74s
+Epoch: 0, Step: 3380/7500, Loss: -0.9918, Time: 292.12s
+Epoch: 0, Step: 3400/7500, Loss: -0.9918, Time: 271.37s
+Epoch: 0, Step: 3420/7500, Loss: -0.9919, Time: 271.10s
+Epoch: 0, Step: 3440/7500, Loss: -0.9919, Time: 293.68s
+Epoch: 0, Step: 3460/7500, Loss: -0.9920, Time: 249.00s
+Epoch: 0, Step: 3480/7500, Loss: -0.9920, Time: 272.74s
+Epoch: 0, Step: 3500/7500, Loss: -0.9921, Time: 236.13s
+Epoch: 0, Step: 3520/7500, Loss: -0.9921, Time: 296.01s
+Epoch: 0, Step: 3540/7500, Loss: -0.9922, Time: 243.54s
+Epoch: 0, Step: 3560/7500, Loss: -0.9922, Time: 258.59s
+Epoch: 0, Step: 3580/7500, Loss: -0.9922, Time: 270.17s
+Epoch: 0, Step: 3600/7500, Loss: -0.9923, Time: 244.80s
+Epoch: 0, Step: 3620/7500, Loss: -0.9923, Time: 259.32s
+Epoch: 0, Step: 3640/7500, Loss: -0.9924, Time: 277.63s
+Epoch: 0, Step: 3660/7500, Loss: -0.9924, Time: 241.17s
+Epoch: 0, Step: 3680/7500, Loss: -0.9925, Time: 274.14s
+Epoch: 0, Step: 3700/7500, Loss: -0.9925, Time: 229.90s
+Epoch: 0, Step: 3720/7500, Loss: -0.9925, Time: 249.20s
+Epoch: 0, Step: 3740/7500, Loss: -0.9926, Time: 262.08s
+Epoch: 0, Step: 3760/7500, Loss: -0.9926, Time: 258.82s
+Epoch: 0, Step: 3780/7500, Loss: -0.9927, Time: 280.51s
+Epoch: 0, Step: 3800/7500, Loss: -0.9927, Time: 245.48s
+Epoch: 0, Step: 3820/7500, Loss: -0.9927, Time: 243.62s
+Epoch: 0, Step: 3840/7500, Loss: -0.9928, Time: 254.84s
+Epoch: 0, Step: 3860/7500, Loss: -0.9928, Time: 218.79s
+Epoch: 0, Step: 3880/7500, Loss: -0.9928, Time: 223.47s
+Epoch: 0, Step: 3900/7500, Loss: -0.9929, Time: 300.72s
+Epoch: 0, Step: 3920/7500, Loss: -0.9929, Time: 233.32s
+Epoch: 0, Step: 3940/7500, Loss: -0.9930, Time: 233.28s
+Epoch: 0, Step: 3960/7500, Loss: -0.9930, Time: 305.94s
+Epoch: 0, Step: 3980/7500, Loss: -0.9930, Time: 267.75s
+Epoch: 0, Step: 4000/7500, Loss: -0.9931, Time: 252.53s
+Epoch: 0, Step: 4020/7500, Loss: -0.9931, Time: 265.47s
+Epoch: 0, Step: 4040/7500, Loss: -0.9931, Time: 262.16s
+Epoch: 0, Step: 4060/7500, Loss: -0.9932, Time: 276.00s
+Epoch: 0, Step: 4080/7500, Loss: -0.9932, Time: 248.55s
+Epoch: 0, Step: 4100/7500, Loss: -0.9932, Time: 282.77s
+Epoch: 0, Step: 4120/7500, Loss: -0.9933, Time: 276.32s
+Epoch: 0, Step: 4140/7500, Loss: -0.9933, Time: 256.83s
+Epoch: 0, Step: 4160/7500, Loss: -0.9933, Time: 242.19s
+Epoch: 0, Step: 4180/7500, Loss: -0.9934, Time: 241.77s
+Epoch: 0, Step: 4200/7500, Loss: -0.9934, Time: 272.15s
+Epoch: 0, Step: 4220/7500, Loss: -0.9934, Time: 257.65s
+Epoch: 0, Step: 4240/7500, Loss: -0.9934, Time: 268.76s
+Epoch: 0, Step: 4260/7500, Loss: -0.9935, Time: 256.31s
+Epoch: 0, Step: 4280/7500, Loss: -0.9935, Time: 254.23s
+Epoch: 0, Step: 4300/7500, Loss: -0.9935, Time: 244.38s
+Epoch: 0, Step: 4320/7500, Loss: -0.9936, Time: 248.86s
+Epoch: 0, Step: 4340/7500, Loss: -0.9936, Time: 227.43s
+Epoch: 0, Step: 4360/7500, Loss: -0.9936, Time: 263.43s
+Epoch: 0, Step: 4380/7500, Loss: -0.9937, Time: 255.15s
+Epoch: 0, Step: 4400/7500, Loss: -0.9937, Time: 240.15s
+Epoch: 0, Step: 4420/7500, Loss: -0.9937, Time: 234.93s
+Epoch: 0, Step: 4440/7500, Loss: -0.9937, Time: 263.55s
+Epoch: 0, Step: 4460/7500, Loss: -0.9938, Time: 266.20s
+Epoch: 0, Step: 4480/7500, Loss: -0.9938, Time: 247.09s
+Epoch: 0, Step: 4500/7500, Loss: -0.9938, Time: 268.64s
+Epoch: 0, Step: 4520/7500, Loss: -0.9939, Time: 267.59s
+Epoch: 0, Step: 4540/7500, Loss: -0.9939, Time: 239.79s
+Epoch: 0, Step: 4560/7500, Loss: -0.9939, Time: 239.81s
+Epoch: 0, Step: 4580/7500, Loss: -0.9939, Time: 250.87s
+Epoch: 0, Step: 4600/7500, Loss: -0.9940, Time: 272.98s
+Epoch: 0, Step: 4620/7500, Loss: -0.9940, Time: 282.50s
+Epoch: 0, Step: 4640/7500, Loss: -0.9940, Time: 243.11s
+Epoch: 0, Step: 4660/7500, Loss: -0.9940, Time: 243.60s
+Warning: Skipping step 4680 due to nan/inf gradients
+Warning: Skipping step 4696 due to nan/inf gradients
+Epoch: 0, Step: 4700/7500, Loss: -0.9941, Time: 513.13s
+Epoch: 0, Step: 4720/7500, Loss: -0.9941, Time: 285.85s
+Epoch: 0, Step: 4740/7500, Loss: -0.9941, Time: 238.86s
+Warning: Skipping step 4750 due to nan/inf gradients
+Warning: Skipping step 4751 due to nan/inf gradients
+Warning: Skipping step 4752 due to nan/inf gradients
+Warning: Skipping step 4753 due to nan/inf gradients
+Epoch: 0, Step: 4760/7500, Loss: -0.9942, Time: 289.38s
+Warning: Skipping step 4762 due to nan/inf gradients
+Warning: Skipping step 4769 due to nan/inf gradients
+Warning: Skipping step 4770 due to nan/inf gradients
+Warning: Skipping step 4774 due to nan/inf gradients
+Warning: Skipping step 4775 due to nan/inf gradients
+Warning: Skipping step 4778 due to nan/inf gradients
+Epoch: 0, Step: 4780/7500, Loss: -0.9942, Time: 276.93s
+Warning: Skipping step 4783 due to nan/inf gradients
+Warning: Skipping step 4784 due to nan/inf gradients
+Warning: Skipping step 4786 due to nan/inf gradients
+Warning: Skipping step 4788 due to nan/inf gradients
+Warning: Skipping step 4789 due to nan/inf gradients
+Warning: Skipping step 4790 due to nan/inf gradients
+Warning: Skipping step 4794 due to nan/inf gradients
+Warning: Skipping step 4797 due to nan/inf gradients
+Warning: Skipping step 4798 due to nan/inf gradients
+Warning: Skipping step 4799 due to nan/inf gradients
+Epoch: 0, Step: 4800/7500, Loss: -0.9942, Time: 278.34s
+Warning: Skipping step 4801 due to nan/inf gradients
+Warning: Skipping step 4803 due to nan/inf gradients
+Warning: Skipping step 4804 due to nan/inf gradients
+Warning: Skipping step 4806 due to nan/inf gradients
+Warning: Skipping step 4807 due to nan/inf gradients
+Warning: Skipping step 4809 due to nan/inf gradients
+Warning: Skipping step 4810 due to nan/inf gradients
+Warning: Skipping step 4813 due to nan/inf gradients
+Epoch: 0, Step: 4820/7500, Loss: -0.9942, Time: 282.60s
+Warning: Skipping step 4822 due to nan/inf gradients
+Warning: Skipping step 4827 due to nan/inf gradients
+Warning: Skipping step 4836 due to nan/inf gradients
+Warning: Skipping step 4837 due to nan/inf gradients
+Warning: Skipping step 4839 due to nan/inf gradients
+Warning: Skipping step 4840 due to nan/inf gradients
+Warning: Skipping step 4842 due to nan/inf gradients
+Warning: Skipping step 4843 due to nan/inf gradients
+Warning: Skipping step 4844 due to nan/inf gradients
+Warning: Skipping step 4850 due to nan/inf gradients
+Warning: Skipping step 4852 due to nan/inf gradients
+Warning: Skipping step 4853 due to nan/inf gradients
+Warning: Skipping step 4854 due to nan/inf gradients
+Warning: Skipping step 4855 due to nan/inf gradients
+Epoch: 0, Step: 4860/7500, Loss: -0.9942, Time: 549.26s
+Warning: Skipping step 4861 due to nan/inf gradients
+Warning: Skipping step 4867 due to nan/inf gradients
+Warning: Skipping step 4868 due to nan/inf gradients
+Warning: Skipping step 4869 due to nan/inf gradients
+Warning: Skipping step 4870 due to nan/inf gradients
+Warning: Skipping step 4872 due to nan/inf gradients
+Warning: Skipping step 4874 due to nan/inf gradients
+Warning: Skipping step 4877 due to nan/inf gradients
+Warning: Skipping step 4879 due to nan/inf gradients
+Epoch: 0, Step: 4880/7500, Loss: -0.9942, Time: 282.01s
+Warning: Skipping step 4887 due to nan/inf gradients
+Warning: Skipping step 4895 due to nan/inf gradients
+Warning: Skipping step 4899 due to nan/inf gradients
+Epoch: 0, Step: 4900/7500, Loss: -0.9943, Time: 247.69s
+Warning: Skipping step 4908 due to nan/inf gradients
+Epoch: 0, Step: 4920/7500, Loss: -0.9943, Time: 237.49s
+Warning: Skipping step 4922 due to nan/inf gradients
+Warning: Skipping step 4923 due to nan/inf gradients
+Warning: Skipping step 4925 due to nan/inf gradients
+Warning: Skipping step 4928 due to nan/inf gradients
+Warning: Skipping step 4938 due to nan/inf gradients
+Epoch: 0, Step: 4940/7500, Loss: -0.9943, Time: 256.48s
+Warning: Skipping step 4942 due to nan/inf gradients
+Warning: Skipping step 4944 due to nan/inf gradients
+Warning: Skipping step 4957 due to nan/inf gradients
+Epoch: 0, Step: 4960/7500, Loss: -0.9943, Time: 246.88s
+Warning: Skipping step 4972 due to nan/inf gradients
+Warning: Skipping step 4976 due to nan/inf gradients
+Epoch: 0, Step: 4980/7500, Loss: -0.9943, Time: 242.08s
+Warning: Skipping step 4982 due to nan/inf gradients
+Warning: Skipping step 4988 due to nan/inf gradients
+Warning: Skipping step 4993 due to nan/inf gradients
+Warning: Skipping step 4995 due to nan/inf gradients
+Warning: Skipping step 5000 due to nan/inf gradients
+Warning: Skipping step 5002 due to nan/inf gradients
+Warning: Skipping step 5004 due to nan/inf gradients
+Epoch: 0, Step: 5020/7500, Loss: -0.9944, Time: 508.45s
+Warning: Skipping step 5027 due to nan/inf gradients
+Warning: Skipping step 5031 due to nan/inf gradients
+Warning: Skipping step 5035 due to nan/inf gradients
+Warning: Skipping step 5036 due to nan/inf gradients
+Warning: Skipping step 5037 due to nan/inf gradients
+Warning: Skipping step 5040 due to nan/inf gradients
+Warning: Skipping step 5043 due to nan/inf gradients
+Epoch: 0, Step: 5060/7500, Loss: -0.9944, Time: 489.86s
+Warning: Skipping step 5063 due to nan/inf gradients
+Warning: Skipping step 5064 due to nan/inf gradients
+Warning: Skipping step 5065 due to nan/inf gradients
+Warning: Skipping step 5066 due to nan/inf gradients
+Warning: Skipping step 5067 due to nan/inf gradients
+Warning: Skipping step 5072 due to nan/inf gradients
+Warning: Skipping step 5078 due to nan/inf gradients
+Warning: Skipping step 5079 due to nan/inf gradients
+Epoch: 0, Step: 5080/7500, Loss: -0.9944, Time: 285.03s
+Warning: Skipping step 5082 due to nan/inf gradients
+Warning: Skipping step 5083 due to nan/inf gradients
+Warning: Skipping step 5087 due to nan/inf gradients
+Warning: Skipping step 5089 due to nan/inf gradients
+Warning: Skipping step 5092 due to nan/inf gradients
+Warning: Skipping step 5099 due to nan/inf gradients
+Warning: Skipping step 5100 due to nan/inf gradients
+Warning: Skipping step 5103 due to nan/inf gradients
+Warning: Skipping step 5108 due to nan/inf gradients
+Warning: Skipping step 5112 due to nan/inf gradients
+Warning: Skipping step 5113 due to nan/inf gradients
+Warning: Skipping step 5115 due to nan/inf gradients
+Epoch: 0, Step: 5120/7500, Loss: -0.9945, Time: 572.08s
+Warning: Skipping step 5128 due to nan/inf gradients
+Warning: Skipping step 5129 due to nan/inf gradients
+Warning: Skipping step 5132 due to nan/inf gradients
+Epoch: 0, Step: 5140/7500, Loss: -0.9945, Time: 256.90s
+Warning: Skipping step 5146 due to nan/inf gradients
+Warning: Skipping step 5148 due to nan/inf gradients
+Warning: Skipping step 5158 due to nan/inf gradients
+Epoch: 0, Step: 5160/7500, Loss: -0.9945, Time: 261.70s
+Warning: Skipping step 5162 due to nan/inf gradients
+Warning: Skipping step 5167 due to nan/inf gradients
+Warning: Skipping step 5168 due to nan/inf gradients
+Warning: Skipping step 5171 due to nan/inf gradients
+Warning: Skipping step 5177 due to nan/inf gradients
+Warning: Skipping step 5180 due to nan/inf gradients
+Warning: Skipping step 5181 due to nan/inf gradients
+Warning: Skipping step 5182 due to nan/inf gradients
+Warning: Skipping step 5187 due to nan/inf gradients
+Warning: Skipping step 5197 due to nan/inf gradients
+Warning: Skipping step 5198 due to nan/inf gradients
+Warning: Skipping step 5199 due to nan/inf gradients
+Epoch: 0, Step: 5200/7500, Loss: -0.9945, Time: 517.71s
+Warning: Skipping step 5201 due to nan/inf gradients
+Warning: Skipping step 5204 due to nan/inf gradients
+Warning: Skipping step 5210 due to nan/inf gradients
+Warning: Skipping step 5211 due to nan/inf gradients
+Warning: Skipping step 5212 due to nan/inf gradients
+Warning: Skipping step 5220 due to nan/inf gradients
+Warning: Skipping step 5223 due to nan/inf gradients
+Epoch: 0, Step: 5240/7500, Loss: -0.9946, Time: 516.27s
+Warning: Skipping step 5242 due to nan/inf gradients
+Warning: Skipping step 5243 due to nan/inf gradients
+Warning: Skipping step 5247 due to nan/inf gradients
+Warning: Skipping step 5255 due to nan/inf gradients
+Epoch: 0, Step: 5260/7500, Loss: -0.9946, Time: 246.21s
+Warning: Skipping step 5266 due to nan/inf gradients
+Warning: Skipping step 5267 due to nan/inf gradients
+Warning: Skipping step 5270 due to nan/inf gradients
+Warning: Skipping step 5273 due to nan/inf gradients
+Epoch: 0, Step: 5280/7500, Loss: -0.9946, Time: 260.72s
+Warning: Skipping step 5284 due to nan/inf gradients
+Warning: Skipping step 5287 due to nan/inf gradients
+Warning: Skipping step 5292 due to nan/inf gradients
+Warning: Skipping step 5299 due to nan/inf gradients
+Warning: Skipping step 5300 due to nan/inf gradients
+Warning: Skipping step 5304 due to nan/inf gradients
+Warning: Skipping step 5308 due to nan/inf gradients
+Warning: Skipping step 5311 due to nan/inf gradients
+Warning: Skipping step 5312 due to nan/inf gradients
+Warning: Skipping step 5314 due to nan/inf gradients
+Warning: Skipping step 5316 due to nan/inf gradients
+Warning: Skipping step 5318 due to nan/inf gradients
+Warning: Skipping step 5319 due to nan/inf gradients
+Warning: Skipping step 5320 due to nan/inf gradients
+Warning: Skipping step 5321 due to nan/inf gradients
+Warning: Skipping step 5322 due to nan/inf gradients
+Warning: Skipping step 5323 due to nan/inf gradients
+Warning: Skipping step 5324 due to nan/inf gradients
+Warning: Skipping step 5325 due to nan/inf gradients
+Warning: Skipping step 5326 due to nan/inf gradients
+Warning: Skipping step 5327 due to nan/inf gradients
+Warning: Skipping step 5328 due to nan/inf gradients
+Warning: Skipping step 5329 due to nan/inf gradients
+Warning: Skipping step 5330 due to nan/inf gradients
+Warning: Skipping step 5331 due to nan/inf gradients
+Warning: Skipping step 5332 due to nan/inf gradients
+Warning: Skipping step 5333 due to nan/inf gradients
+Warning: Skipping step 5334 due to nan/inf gradients
+Warning: Skipping step 5335 due to nan/inf gradients
+Warning: Skipping step 5336 due to nan/inf gradients
+Warning: Skipping step 5337 due to nan/inf gradients
+Warning: Skipping step 5338 due to nan/inf gradients
+Warning: Skipping step 5339 due to nan/inf gradients
+Warning: Skipping step 5340 due to nan/inf gradients
+Warning: Skipping step 5341 due to nan/inf gradients
+Warning: Skipping step 5342 due to nan/inf gradients
+Warning: Skipping step 5343 due to nan/inf gradients
+Warning: Skipping step 5344 due to nan/inf gradients
+Warning: Skipping step 5345 due to nan/inf gradients
+Warning: Skipping step 5346 due to nan/inf gradients
+Warning: Skipping step 5347 due to nan/inf gradients
+Warning: Skipping step 5348 due to nan/inf gradients
+Warning: Skipping step 5349 due to nan/inf gradients
+Warning: Skipping step 5350 due to nan/inf gradients
+Warning: Skipping step 5351 due to nan/inf gradients
+Warning: Skipping step 5352 due to nan/inf gradients
+Warning: Skipping step 5353 due to nan/inf gradients
+Warning: Skipping step 5354 due to nan/inf gradients
+Warning: Skipping step 5355 due to nan/inf gradients
+Warning: Skipping step 5356 due to nan/inf gradients
+Warning: Skipping step 5357 due to nan/inf gradients
+Warning: Skipping step 5358 due to nan/inf gradients
+Warning: Skipping step 5359 due to nan/inf gradients
+Warning: Skipping step 5360 due to nan/inf gradients
+Warning: Skipping step 5361 due to nan/inf gradients
+Warning: Skipping step 5362 due to nan/inf gradients
+Warning: Skipping step 5363 due to nan/inf gradients
+Warning: Skipping step 5364 due to nan/inf gradients
+Warning: Skipping step 5365 due to nan/inf gradients
+Warning: Skipping step 5366 due to nan/inf gradients
+Warning: Skipping step 5367 due to nan/inf gradients
+Warning: Skipping step 5368 due to nan/inf gradients
+Warning: Skipping step 5369 due to nan/inf gradients
+Warning: Skipping step 5370 due to nan/inf gradients
+Warning: Skipping step 5371 due to nan/inf gradients
+Warning: Skipping step 5372 due to nan/inf gradients
+Warning: Skipping step 5373 due to nan/inf gradients
+Warning: Skipping step 5374 due to nan/inf gradients
+Warning: Skipping step 5375 due to nan/inf gradients
+Warning: Skipping step 5376 due to nan/inf gradients
+Warning: Skipping step 5377 due to nan/inf gradients
+Warning: Skipping step 5378 due to nan/inf gradients
+Warning: Skipping step 5379 due to nan/inf gradients
+Warning: Skipping step 5380 due to nan/inf gradients
+Warning: Skipping step 5381 due to nan/inf gradients
+Warning: Skipping step 5382 due to nan/inf gradients
+Warning: Skipping step 5383 due to nan/inf gradients
+Warning: Skipping step 5384 due to nan/inf gradients
+Warning: Skipping step 5385 due to nan/inf gradients
+Warning: Skipping step 5386 due to nan/inf gradients
+Warning: Skipping step 5387 due to nan/inf gradients
+Warning: Skipping step 5388 due to nan/inf gradients
+Warning: Skipping step 5389 due to nan/inf gradients
+Warning: Skipping step 5390 due to nan/inf gradients
+Warning: Skipping step 5391 due to nan/inf gradients
+Warning: Skipping step 5392 due to nan/inf gradients
+Warning: Skipping step 5393 due to nan/inf gradients
+Warning: Skipping step 5394 due to nan/inf gradients
+Warning: Skipping step 5395 due to nan/inf gradients
+Warning: Skipping step 5396 due to nan/inf gradients
+Warning: Skipping step 5397 due to nan/inf gradients
+Warning: Skipping step 5398 due to nan/inf gradients
+Warning: Skipping step 5399 due to nan/inf gradients
+Warning: Skipping step 5400 due to nan/inf gradients
+Warning: Skipping step 5401 due to nan/inf gradients
+Warning: Skipping step 5402 due to nan/inf gradients
+Warning: Skipping step 5403 due to nan/inf gradients
+Warning: Skipping step 5404 due to nan/inf gradients
+Warning: Skipping step 5405 due to nan/inf gradients
+Warning: Skipping step 5406 due to nan/inf gradients
+Warning: Skipping step 5407 due to nan/inf gradients
+Warning: Skipping step 5408 due to nan/inf gradients
+Warning: Skipping step 5409 due to nan/inf gradients
+Warning: Skipping step 5410 due to nan/inf gradients
+Warning: Skipping step 5411 due to nan/inf gradients
+Warning: Skipping step 5412 due to nan/inf gradients
+Warning: Skipping step 5413 due to nan/inf gradients
+Warning: Skipping step 5414 due to nan/inf gradients
+Warning: Skipping step 5415 due to nan/inf gradients
+Warning: Skipping step 5416 due to nan/inf gradients
+Warning: Skipping step 5417 due to nan/inf gradients
+Warning: Skipping step 5418 due to nan/inf gradients
+Warning: Skipping step 5419 due to nan/inf gradients
+Warning: Skipping step 5420 due to nan/inf gradients
+Warning: Skipping step 5421 due to nan/inf gradients
+Warning: Skipping step 5422 due to nan/inf gradients
+Warning: Skipping step 5423 due to nan/inf gradients
+Warning: Skipping step 5424 due to nan/inf gradients
+Warning: Skipping step 5425 due to nan/inf gradients
+Warning: Skipping step 5426 due to nan/inf gradients
+Warning: Skipping step 5427 due to nan/inf gradients
+Warning: Skipping step 5428 due to nan/inf gradients
+Warning: Skipping step 5429 due to nan/inf gradients
+Warning: Skipping step 5430 due to nan/inf gradients
+Warning: Skipping step 5431 due to nan/inf gradients
+Warning: Skipping step 5432 due to nan/inf gradients
+Warning: Skipping step 5433 due to nan/inf gradients
+Warning: Skipping step 5434 due to nan/inf gradients
+Warning: Skipping step 5435 due to nan/inf gradients
+Warning: Skipping step 5436 due to nan/inf gradients
+Warning: Skipping step 5437 due to nan/inf gradients
+Warning: Skipping step 5438 due to nan/inf gradients
+Warning: Skipping step 5439 due to nan/inf gradients
+Warning: Skipping step 5440 due to nan/inf gradients
+Warning: Skipping step 5441 due to nan/inf gradients
+Warning: Skipping step 5442 due to nan/inf gradients
+Warning: Skipping step 5443 due to nan/inf gradients
+Warning: Skipping step 5444 due to nan/inf gradients
+Warning: Skipping step 5445 due to nan/inf gradients
+Warning: Skipping step 5446 due to nan/inf gradients
+Warning: Skipping step 5447 due to nan/inf gradients
+Warning: Skipping step 5448 due to nan/inf gradients
+Warning: Skipping step 5449 due to nan/inf gradients
+Warning: Skipping step 5450 due to nan/inf gradients
+Warning: Skipping step 5451 due to nan/inf gradients
+Warning: Skipping step 5452 due to nan/inf gradients
+Warning: Skipping step 5453 due to nan/inf gradients
+Warning: Skipping step 5454 due to nan/inf gradients
+Warning: Skipping step 5455 due to nan/inf gradients
+Warning: Skipping step 5456 due to nan/inf gradients
+Warning: Skipping step 5457 due to nan/inf gradients
+Warning: Skipping step 5458 due to nan/inf gradients
+Warning: Skipping step 5459 due to nan/inf gradients
+Warning: Skipping step 5460 due to nan/inf gradients
+Warning: Skipping step 5461 due to nan/inf gradients
+Warning: Skipping step 5462 due to nan/inf gradients
+Warning: Skipping step 5463 due to nan/inf gradients
+Warning: Skipping step 5464 due to nan/inf gradients
+Warning: Skipping step 5465 due to nan/inf gradients
+Warning: Skipping step 5466 due to nan/inf gradients
+Warning: Skipping step 5467 due to nan/inf gradients
+Warning: Skipping step 5468 due to nan/inf gradients
+Warning: Skipping step 5469 due to nan/inf gradients
+Warning: Skipping step 5470 due to nan/inf gradients
+Warning: Skipping step 5471 due to nan/inf gradients
+Warning: Skipping step 5472 due to nan/inf gradients
+Warning: Skipping step 5473 due to nan/inf gradients
+Warning: Skipping step 5474 due to nan/inf gradients
+Warning: Skipping step 5475 due to nan/inf gradients
+Warning: Skipping step 5476 due to nan/inf gradients
+Warning: Skipping step 5477 due to nan/inf gradients
+Warning: Skipping step 5478 due to nan/inf gradients
+Warning: Skipping step 5479 due to nan/inf gradients
+Warning: Skipping step 5480 due to nan/inf gradients

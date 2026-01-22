@@ -1,8 +1,0 @@
-
-互联网密钥交换IKE（Internet Key Exchange）协议。
-
-
-ESP协议提供源点鉴别、数据完整性和保密。
-IPsec支持IPv4和IPv6。
-在IPv6中，AH和ESP都是扩展首部的一部分。
-AH协议的功能都已包含在ESP协议中，因此使用ESP协议就可以不使用AH协议。

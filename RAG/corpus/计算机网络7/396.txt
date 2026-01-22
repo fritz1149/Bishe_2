@@ -1,9 +1,0 @@
-表6-4给出了最主要的几种简单类型。
-
-SMI定义了两种结构化数据类型，即sequence和sequence of。
-
-数据类型sequence类似于C语言中的struct或record，它是一些简单数据类型的组合（不一定要相同的类型）。而数据类型sequence of类似于C语言中的array，它是同样类型的简单数据类型的组合，或同样类型的sequence数据类型的组合。
-
-3. 编码方法
-
-SMI使用ASN.1制定的基本编码规则BER(Basic Encoding Rule)进行数据的编码。

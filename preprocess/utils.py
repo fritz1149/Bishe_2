@@ -28,7 +28,7 @@ def _Qwen3VL_tokenizer(model_path: str = "./Qwen3-VL-8B-Instruct", SEQ_LENGTH: i
         _Qwen3VL_tokenizer._cache = (tokenizer, SEQ_LENGTH, None, PAD_TOKEN, None, PAD_ID)
     return _Qwen3VL_tokenizer._cache
 
-def _Qwen3VL_embedder_tokenizer(model_path: str = "./Qwen3-Embedding-2B", SEQ_LENGTH: int = 1024):
+def _Qwen3VL_embedder_tokenizer(model_path: str = "./Qwen3-VL-Embedding-2B", SEQ_LENGTH: int = 1024):
     if not hasattr(_Qwen3VL_embedder_tokenizer, "_cache"):
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -161,6 +161,7 @@ def _str_to_ids(text: str, seq_length: int = None, type: str = "bert", CLS_front
         tokenizer, SEQ_LENGTH, CLS_TOKEN, PAD_TOKEN, CLS_ID, PAD_ID = _Qwen3VL_embedder_tokenizer()
         if seq_length is None:
             seq_length = SEQ_LENGTH
+    # print(f"[提示] 当前使用的tokenizer类型: {type}, tokenizer对象: {tokenizer}")
     tokens = tokenizer.tokenize(text)
     # 输出tokens的长度和内容，便于调试
     # print(f"Token count: {len(tokens)}\nTokens: {tokens}")
@@ -374,7 +375,7 @@ fields_ids = [_str_to_ids(f"<{field}>", None, "qwen3vl", False, False)[0] for fi
 payload_ids = _str_to_ids("<payload>", None, "qwen3vl", False, False)[0]
 tcp_payload_ids = _str_to_ids("<tcp.payload>", None, "qwen3vl", False, False)[0]
 udp_payload_ids = _str_to_ids("<udp.payload>", None, "qwen3vl", False, False)[0]
-def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, shuffle_columns: bool = False, random_drop_columns: bool = False, biased_avoid:bool = False, token_type: str = "qwen3vl", payload_token_type: str = None):
+def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, shuffle_columns: bool = False, random_drop_columns: bool = False, biased_avoid:bool = False, token_type: str = "qwen3vl", payload_token_type: str = "bert"):
     """
     构建表格数据
     
@@ -382,8 +383,6 @@ def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool =
         token_type: 用于表格字段和标记的tokenizer类型，默认为 "qwen3vl"
         payload_token_type: 用于payload内容的tokenizer类型，如果为None则使用token_type，默认为None
     """
-    if payload_token_type is None:
-        payload_token_type = token_type
     
     # 根据token_type动态生成字段IDs
     fields_ids_local = [_str_to_ids(f"<{field}>", None, token_type, False, False)[0] for field in fields]
@@ -522,7 +521,7 @@ def _flat_table(table):
     return [item for column in table for cell in column for item in cell]
 
 def _LM_input(lines, payloads, flow_type, label_ids, prompt_ids, prompt2_ids, label = None, extract_payloads_from_lines=False, shuffle_columns=False, random_drop_columns=False, biased_avoid=False,
-    _build_table_result=None, token_type: str = "qwen3vl", payload_token_type: str = None):
+    _build_table_result=None, token_type: str = "qwen3vl", payload_token_type: str = "bert"):
     """
     生成语言模型输入样本
     
@@ -869,7 +868,7 @@ def check_preprocess(preprocess_path: str):
     print("=" * 60)
     print(f"共 {len(label_names)} 个label，总样本数: {total_samples}")
 
-def check_LM_samples(src_path: str):
+def check_LM_samples(src_path: str, type="qwen-vl"):
     """
     检查LM样本内容：如果src_path是目录，则遍历其中所有.pkl文件；如果src_path是文件，则只读取该文件。
     """
@@ -882,7 +881,10 @@ def check_LM_samples(src_path: str):
         return
 
     from transformers import AutoTokenizer
-    model_name_or_path = "./Qwen3-VL-8B-Instruct"
+    if type == "qwen-vl":
+        model_name_or_path = "./Qwen3-VL-8B-Instruct"
+    elif type == "qwen-vl-emb":
+        model_name_or_path = "./Qwen3-VL-Embedding-2B"
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
 
     if os.path.isfile(src_path):

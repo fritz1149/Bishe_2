@@ -1,8 +1,0 @@
-
-IPsec并没有限定用户必须使用何种特定的加密和鉴别算法。
-实际上，IPSec是个框架，它允许通信双方选择合适的算法和参数（例如，密钥长度）。
-为保证互操作性，IPsec还包含了一套加密算法，所有IPsec的实现都必须使用。
-
-
-IPsec协议族中的协议可划分为以下三个部分：IP安全数据报格式的两个协议：鉴别首部AH（Authentication Header）协议和封装安全有效载荷ESP（Encapsulation Security Payload）协议。
-有关加密算法的三个协议。

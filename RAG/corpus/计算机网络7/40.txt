@@ -1,6 +1,0 @@
-ISOC下面有一个技术组织叫做互联网体系结构委员会IAB（Internet Architecture Board），负责管理互联网有关协议的开发。IAB下面又设有两个工程部：
-
-（1）互联网工程部IETF（Internet Engineering Task Force）
-IETF是由许多工作组WG（Working Group）组成的论坛（forum），具体工作由互联网工程指导小组IESG（Internet Engineering Steering Group）管理。这些工作组划分为若干个领域（area），每个领域集中研究某一特定的短期和中期的工程问题，主要是针对协议的开发和标准化。
-（2）互联网研究部IRTF（Internet Research Task Force）
-IRTF是由一些研究组RG（Research Group）组成的论坛，具体工作由互联网研究指导小组IRSG（Internet Research Steering Group）管理。IRTF的任务是研究一些需要长期考虑的问题，包括互联网的一些协议、应用、体系结构等。

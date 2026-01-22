@@ -226,13 +226,25 @@ def generate_contrastive_dataset_2(preprocess_path: str, dest_path: str, k1: int
     # 为每个线程生成独立的随机种子
     thread_seeds = [random.randint(0, 2**31 - 1) for _ in range(num_threads)]
 
+    from .utils import _str_to_ids
+    system_prompt = """<|im_start|>system
+Represent the user's input.<|im_end|> """
+    prompt = system_prompt + f"""
+<|im_start|>user
+<表格开始>"""
+    prompt_ids = _str_to_ids(prompt, type="qwen3vl-emb")[0]
+    prompt2 = """<表格结束><|im_end|>
+<|im_start|>assistant
+<|endoftext|>"""
+    prompt2_ids = _str_to_ids(prompt2, type="qwen3vl-emb")[0]
+
     def generate_sample(lines):
         nonlocal lines_used
         lines_used_here = lines_used
-        sample = _LM_input(lines[:lines_used_here], None, None, [], [], [], label=1, extract_payloads_from_lines=True, biased_avoid=True)
+        sample = _LM_input(lines[:lines_used_here], None, None, [], prompt_ids, prompt2_ids, label=1, extract_payloads_from_lines=True, biased_avoid=True, token_type="qwen3vl-emb")
         while sample["data"][-1].shape[1] > 4096 and lines_used_here > 0:
             lines_used_here -= 2
-            sample = _LM_input(lines[:lines_used_here], None, None, [], [], [], label=1, extract_payloads_from_lines=True, biased_avoid=True)
+            sample = _LM_input(lines[:lines_used_here], None, None, [], prompt_ids, prompt2_ids, label=1, extract_payloads_from_lines=True, biased_avoid=True, token_type="qwen3vl-emb")
         if sample["data"][-1].shape[1] > 4096:
             raise Exception(f"样本长度始终大于4096: {lines}")
         return sample
@@ -421,6 +433,14 @@ def generate_contrastive_dataset_2(preprocess_path: str, dest_path: str, k1: int
         print(f"保存测试集（{len(test_samples)} 个样本）到: {os.path.join(dest_path, "test")}")
         _dump_in_chunks(test_samples, os.path.join(dest_path, "test"), -1, name="test")
         print(f"测试集保存完成！样本数: {len(test_samples)}")
+        
+        # 保存 id2label.json 到测试目录
+        import json
+        id2label = {str(idx): label for label, idx in label2id.items()}
+        id2label_path = os.path.join(dest_path, "test", "id2label.json")
+        with open(id2label_path, "w", encoding="utf-8") as f:
+            json.dump(id2label, f, ensure_ascii=False, indent=2)
+        print(f"id2label.json 已保存到: {id2label_path}")
 
 def generate_alignment_dataset_1(tmp_path: str, dest_path: str, k1: int = 10000, k2: int = 1000, k3: int = 1000, k4: int = 1000, k5: int = 1000, k6: int = 1000, test_ratio: float = 0.1, 
     packet_num_in_flow: int = 10):

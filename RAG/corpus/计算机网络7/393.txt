@@ -1,3 +1,0 @@
-在其下面有一个美国国防部dod(Department of Defense)的子树（标号为6），再下面就是internet（标号为1）。在只讨论internet中的对象时，可只画出internet以下的子树，并在internet节点旁边写上对象标识符1.3.6.1即可。
-
-在internet节点下面的标号为2的节点是mgmt（管理）。再下面只有一个节点，即管理信息库mib-2，其对象标识符为1.3.6.1.2.1。在mib-2下面包含了所有被SNMP管理的对象。

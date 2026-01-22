@@ -1,6 +1,0 @@
-
-现在 TCP 连接还没有释放掉。
-必须经过时间等待计时器(TIME-WAIT timer)设置的时间 2MSL 后，A 才进入到 CLOSED 状态。
-时间 MSL 叫做最长报文段寿命(Maximum Segment Lifetime), RFC 793建议设为2分钟。
-但这完全是从工程上来考虑的，对于现在的网络， MSL=2分钟可能太长了一些。
-因此 TCP 允许不同的实现可根据具体情况使用更小的 MSL 值。

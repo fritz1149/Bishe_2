@@ -1,6 +1,0 @@
-
-所有可打印字符在NVT中的意义和在ASCII码中一样。
-但NVT只使用了ASCII码的控制字符中的几个。
-此外，NVT还定义了两字符的CR-LF为标准的行结束控制符。
-当用户键入回车按键时，TELNET的客户就把它转换为CR-LF再进行传输，而TELNET服务器要把CR-LF转换为远地机器的行结束字符。
-TELNET的选项协商(Option Negotiation)使TELNET客户和TELNET服务器可商定使用更多的终端功能，协商的双方是平等的。
