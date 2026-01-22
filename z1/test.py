@@ -16,6 +16,8 @@ def main(use_long_prompt: int = 0, use_xformers: int = 0, eval_mode: int = 0, au
         from types import SimpleNamespace
         args = SimpleNamespace(
             llm= model_name_or_path,
+            projector="linear",
+            linear_output_dim=4096,
             test_mode=True,
             align1_mode=False,
             align2_mode=False,
