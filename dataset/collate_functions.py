@@ -277,17 +277,16 @@ def collate_LLMDataset_leftpadding(batch, keep_labels=False):
 
         # 构造label，非label部分-100
         if keep_labels:
-            label_prefix = [-100] * len(x_ids)
-            label_suffix = [-100] * pad_len
-            target_labels.append(label_prefix + y_ids + label_suffix)
+            label_prefix = [-100] * (len(x_ids)+pad_len)
+            target_labels.append(label_prefix + y_ids)
 
     input_ids = torch.tensor(input_ids)
     if keep_labels:
         labels_ids = torch.tensor(target_labels)
     # payload_ids = torch.tensor(payload_ids) # payload这里每个样本的序列长度不一样
     for i, position_ids_ in enumerate(position_ids):
-        start = position_ids_.max().item()+1
-        position_ids[i] = torch.cat([position_ids_, torch.arange(start, start+max_seq_len-position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
+        pad_len = max_seq_len - position_ids_.shape[1]
+        position_ids[i] = torch.cat([torch.arange(0, pad_len).unsqueeze(0).expand(3, -1), position_ids_+pad_len], dim=1)
     position_ids = torch.stack(position_ids, dim=1)
     attention_mask = (input_ids != PAD_ID).long()
     assert position_ids.shape[0] == 3 

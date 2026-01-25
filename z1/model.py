@@ -37,7 +37,6 @@ class ProposeModel(nn.Module, GenerationMixin):
                 target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
             )
             backbone = PeftMixedModel(backbone, lora_config, adapter_name="0")
-        if args.align1_mode or args.align2_mode or args.finetune_mode or args.test_mode:
             from .encoder import get_longformer_with_projector
             self.encoder = get_longformer_with_projector(args)
         if args.align1_mode:
@@ -75,6 +74,7 @@ class ProposeModel(nn.Module, GenerationMixin):
             for param in self.parameters(recurse=True):
                 param.requires_grad = False
         if args.eval_mode:
+            self.backbone = backbone
             for param in self.parameters(recurse=True):
                 param.requires_grad = False
             # self.backbone.gradient_checkpointing_enable()
@@ -100,78 +100,93 @@ class ProposeModel(nn.Module, GenerationMixin):
                 result[name] = d[name]
         return result
 
-    
-def resume(self, args):
-    def resume_training_status(args, ckpt):
-        if 'epoch' in ckpt:
-            args.start_epoch = ckpt['epoch']+1
-        if 'optimizer' in ckpt:
-            args.optimizer.load_state_dict(ckpt['optimizer'])
-            # 否则忽略
-        if 'best_loss' in ckpt:
-            args.best_loss = ckpt['best_loss']
-        if 'best_acc' in ckpt:
-            args.best_acc = ckpt['best_acc']
+    def dispatch(self):
+        self.device = torch.device('cuda:0')
+        self.encoder = self.encoder.to('cuda:0')
+        self.text_embedder = self.text_embedder.to('cuda:0')
+        device_map = {
+            "base_model.model.model.language_model.embed_tokens": "cuda:0",
+            "base_model.model.model.language_model.rotary_emb": "cuda:0",
+            "base_model.model.model.visual": "cuda:0",
+            "base_model.model.lm_head": "cuda:1",
+            "base_model.model.model.language_model.norm": "cuda:1",
+            **{f"base_model.model.model.language_model.layers.{i}": "cuda:0" for i in range(0, 18)},
+            **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(18, 36)},
+        }
+        from accelerate import dispatch_model
+        self.backbone = dispatch_model(self.backbone, device_map=device_map)
 
-    if getattr(args, "resume_encoder", None) and args.resume_encoder != "":
-        ckpt = torch.load(args.resume_encoder, map_location="cpu", weights_only=True)
-        # 仅加载 "encoder." 开头的权重
-        state_dict = ckpt["model"]
-        encoder_state_dict = {k[len("module.backbone.original_model."):]: v for k, v in state_dict.items() if k.startswith("module.backbone.original_model.")}
-        incompatible_keys = self.encoder.original_model.load_state_dict(encoder_state_dict, strict=False)
-        if getattr(args, "resume_log", False):
-            print("resume encoder")
-            for k in encoder_state_dict.keys():
-                print("module.backbone.original_model. "+k)
-            print("Missing keys (模型有，但 checkpoint 没有):")
-            print(incompatible_keys.missing_keys)
-            print("\nUnexpected keys (checkpoint 有，但模型没有):")
-            print(incompatible_keys.unexpected_keys)
-    if getattr(args, "resume_linear", None) and args.resume_linear != "":
-        ckpt = torch.load(args.resume_linear, map_location="cpu", weights_only=True)
-        state_dict = ckpt["model"]
-        linear_state_dict = {k[len("encoder.fc."):]: v for k, v in state_dict.items() if k.startswith("encoder.fc.")}
-        incompatible_keys = self.encoder.fc.load_state_dict(linear_state_dict, strict=False)
-        if getattr(args, "align2_mode", False):
-            resume_training_status(args, ckpt)
-        if getattr(args, "resume_log", False):
-            print("resume linear")
-            for k in linear_state_dict.keys():
-                print("encoder.fc. "+k)
-            print("Missing keys (模型有，但 checkpoint 没有):")
-            print(incompatible_keys.missing_keys)
-            print("\nUnexpected keys (checkpoint 有，但模型没有):")
-            print(incompatible_keys.unexpected_keys)
-    if getattr(args, "resume_lora0", None) and args.resume_lora0 != "":
-        ckpt = torch.load(args.resume_lora0, map_location="cpu", weights_only=True)
-        state_dict = ckpt["model"]
-        lora0_state_dict = {k[len("backbone.base_model.model.model.language_model.layers."):]: v for k, v in state_dict.items() if k.startswith("backbone.base_model.model.model.language_model.layers.")}
-        incompatible_keys = self.backbone.base_model.model.model.language_model.layers.load_state_dict(lora0_state_dict, strict=False)
-        if getattr(args, "align1_mode", False):
-            resume_training_status(args, ckpt)
-        if getattr(args, "resume_log", False):
-            print("resume lora0")
-            for k in lora0_state_dict.keys():
-                print("backbone.base_model.model.model.language_model.layers. "+k)
-            print("Missing keys (模型有，但 checkpoint 没有):")
-            print(incompatible_keys.missing_keys)
-            print("\nUnexpected keys (checkpoint 有，但模型没有):")
-            print(incompatible_keys.unexpected_keys)
-    if getattr(args, "resume_lora1", None) and args.resume_lora1 != "":
-        ckpt = torch.load(args.resume_lora1, map_location="cpu", weights_only=True)
-        state_dict = ckpt["model"]
-        lora1_state_dict = {k[len("backbone.base_model.model.model.language_model.layers."):]: v for k, v in state_dict.items() if k.startswith("backbone.base_model.model.model.language_model.layers.")}
-        incompatible_keys = self.backbone.base_model.model.model.language_model.layers.load_state_dict(lora1_state_dict, strict=False)
-        if getattr(args, "finetune_mode", False):
-            resume_training_status(args, ckpt)
-        if getattr(args, "resume_log", False):
-            print("resume lora1")
-            for k in state_dict.keys():
-                print(k)
-            print("Missing keys (模型有，但 checkpoint 没有):")
-            print(incompatible_keys.missing_keys)
-            print("\nUnexpected keys (checkpoint 有，但模型没有):")
-            print(incompatible_keys.unexpected_keys)
+    def resume(self, args):
+        def resume_training_status(args, ckpt):
+            if 'epoch' in ckpt:
+                args.start_epoch = ckpt['epoch']+1
+            if 'optimizer' in ckpt:
+                args.optimizer.load_state_dict(ckpt['optimizer'])
+                # 否则忽略
+            if 'best_loss' in ckpt:
+                args.best_loss = ckpt['best_loss']
+            if 'best_acc' in ckpt:
+                args.best_acc = ckpt['best_acc']
+
+        if getattr(args, "resume_encoder", None) and args.resume_encoder != "":
+            ckpt = torch.load(args.resume_encoder, map_location="cpu", weights_only=True)
+            # 仅加载 "encoder." 开头的权重
+            state_dict = ckpt["model"]
+            encoder_state_dict = {k[len("module.backbone.original_model."):]: v for k, v in state_dict.items() if k.startswith("module.backbone.original_model.")}
+            incompatible_keys = self.encoder.original_model.load_state_dict(encoder_state_dict, strict=False)
+            if getattr(args, "resume_log", False):
+                print("resume encoder")
+                for k in encoder_state_dict.keys():
+                    print("module.backbone.original_model. "+k)
+                print("Missing keys (模型有，但 checkpoint 没有):")
+                print(incompatible_keys.missing_keys)
+                print("\nUnexpected keys (checkpoint 有，但模型没有):")
+                print(incompatible_keys.unexpected_keys)
+        if getattr(args, "resume_linear", None) and args.resume_linear != "":
+            ckpt = torch.load(args.resume_linear, map_location="cpu", weights_only=True)
+            state_dict = ckpt["model"]
+            linear_state_dict = {k[len("encoder.fc."):]: v for k, v in state_dict.items() if k.startswith("encoder.fc.")}
+            incompatible_keys = self.encoder.fc.load_state_dict(linear_state_dict, strict=False)
+            if getattr(args, "align2_mode", False):
+                resume_training_status(args, ckpt)
+            if getattr(args, "resume_log", False):
+                print("resume linear")
+                for k in linear_state_dict.keys():
+                    print("encoder.fc. "+k)
+                print("Missing keys (模型有，但 checkpoint 没有):")
+                print(incompatible_keys.missing_keys)
+                print("\nUnexpected keys (checkpoint 有，但模型没有):")
+                print(incompatible_keys.unexpected_keys)
+        if getattr(args, "resume_lora0", None) and args.resume_lora0 != "":
+            ckpt = torch.load(args.resume_lora0, map_location="cpu", weights_only=True)
+            state_dict = ckpt["model"]
+            lora0_state_dict = {k[len("backbone.base_model.model.model.language_model.layers."):]: v for k, v in state_dict.items() if k.startswith("backbone.base_model.model.model.language_model.layers.")}
+            incompatible_keys = self.backbone.base_model.model.model.language_model.layers.load_state_dict(lora0_state_dict, strict=False)
+            if getattr(args, "align1_mode", False):
+                resume_training_status(args, ckpt)
+            if getattr(args, "resume_log", False):
+                print("resume lora0")
+                for k in lora0_state_dict.keys():
+                    print("backbone.base_model.model.model.language_model.layers. "+k)
+                print("Missing keys (模型有，但 checkpoint 没有):")
+                print(incompatible_keys.missing_keys)
+                print("\nUnexpected keys (checkpoint 有，但模型没有):")
+                print(incompatible_keys.unexpected_keys)
+        if getattr(args, "resume_lora1", None) and args.resume_lora1 != "":
+            ckpt = torch.load(args.resume_lora1, map_location="cpu", weights_only=True)
+            state_dict = ckpt["model"]
+            lora1_state_dict = {k[len("backbone.base_model.model.model.language_model.layers."):]: v for k, v in state_dict.items() if k.startswith("backbone.base_model.model.model.language_model.layers.")}
+            incompatible_keys = self.backbone.base_model.model.model.language_model.layers.load_state_dict(lora1_state_dict, strict=False)
+            if getattr(args, "finetune_mode", False):
+                resume_training_status(args, ckpt)
+            if getattr(args, "resume_log", False):
+                print("resume lora1")
+                for k in state_dict.keys():
+                    print(k)
+                print("Missing keys (模型有，但 checkpoint 没有):")
+                print(incompatible_keys.missing_keys)
+                print("\nUnexpected keys (checkpoint 有，但模型没有):")
+                print(incompatible_keys.unexpected_keys)
 
     def forward(
             self, 

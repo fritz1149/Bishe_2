@@ -29,7 +29,6 @@ class RAGConfig:
         if self.stop_phrases is None:
             self.stop_phrases = ["结果是", "最终答案", "综上所述", "因此可以判断"]
 
-
 class RAGRetriever:
     """RAG 检索器，封装向量检索和 BM25 检索"""
     

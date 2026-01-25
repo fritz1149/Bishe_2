@@ -32,7 +32,7 @@ class TrafficEmbeddingGenerator:
             device: 设备 ('cuda' 或 'cpu')，None 则自动选择
         """
         self.args = args
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.model = None
         self.processor = None
     
@@ -44,6 +44,7 @@ class TrafficEmbeddingGenerator:
             
             self.model = TrafficEmbedder(self.args)
             self.model.to(self.device)
+            # self.model.dispatch()
             self.model.resume(self.args)
             self.model.eval()
             
@@ -317,7 +318,7 @@ class TextCorpusGenerator:
             device: 设备 ('cuda' 或 'cpu')，None 则自动选择
         """
         self.args = args
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.model = None
         self.tokenizer = None
     
@@ -329,7 +330,8 @@ class TextCorpusGenerator:
             
             self.model = ProposeModel(self.args)
             self.model.eval()
-            self.model.to(self.device)
+            # self.model.to(self.device)
+            self.model.dispatch()
             self.model.resume(self.args)
             
             self.tokenizer = AutoTokenizer.from_pretrained(self.args.llm)
@@ -344,7 +346,8 @@ class TextCorpusGenerator:
         num_generations: int = 5,
         entropy_threshold: float = 1.5,
         save_threshold: int = 1000,
-        max_new_tokens: int = 512
+        max_new_tokens: int = 512,
+        early_stop_batch: int = None
     ) -> None:
         """
         从数据集生成文本语料，使用多结果生成、LLM聚类和熵筛选
@@ -482,93 +485,117 @@ class TextCorpusGenerator:
             return prompt
         
         # 分批处理和存储
+        i = 0
         for batch_data, txt_filenames in tqdm(dataloader, desc="生成语料"):
-            # batch_size=1，所以 txt_filenames 只有一个元素
-            sample_id = txt_filenames[0]
-            input_length = batch_data['input_ids'].shape[1]
-            
-            # 1. 对同一样本生成多条结果（通过复制 batch_data 实现批量生成）
-            expanded_batch = {}
-            for key, value in batch_data.items():
-                if key == 'labels':
+            i += 1
+            if early_stop_batch is not None and i >= early_stop_batch:
+                break
+            try:
+                # batch_size=1，所以 txt_filenames 只有一个元素
+                sample_id = txt_filenames[0]
+                input_length = batch_data['input_ids'].shape[1]
+                
+                # 1. 对同一样本生成多条结果（通过复制 batch_data 实现批量生成）
+                expanded_batch = {}
+                for key, value in batch_data.items():
+                    if key == 'labels':
+                        continue
+                    if key == 'payloads':
+                        # payloads 是列表，需要复制每个元素
+                        expanded_batch[key] = [value[0] for _ in range(num_generations)]
+                    elif key == 'position_ids':
+                        # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, num_generations, seq_len]
+                        expanded_batch[key] = value.repeat(1, num_generations, 1)
+                    else:
+                        # 其他 tensor 数据，在第一个维度复制
+                        expanded_batch[key] = value.repeat(num_generations, 1)
+                
+                # 批量生成
+                outputs = self.model.generate(
+                    **expanded_batch,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9
+                ).cpu()
+                
+                if early_stop_batch is not None:
+                    accumulated_corpus.append({
+                        'id': sample_id,
+                        'payloads_len': batch_data['payloads'][0][0].shape[0],
+                        'position_ids_shape': batch_data['position_ids'].shape,
+                        'input_ids_shape': batch_data['input_ids'].shape,
+                        'labels_shape': batch_data['labels'].shape,
+                        'attention_mask_shape': batch_data['attention_mask'].shape,
+                        'input_ids': ' '.join([str(x.item()) for x in batch_data['input_ids'][0]]),
+                        'labels': ' '.join([str(x.item()) for x in batch_data['labels'][0]]),
+                        'attention_mask': ' '.join([str(x.item()) for x in batch_data['attention_mask'][0]]),
+                        'outputs': outputs
+                    })
                     continue
-                if key == 'payloads':
-                    # payloads 是列表，需要复制每个元素
-                    expanded_batch[key] = [value[0] for _ in range(num_generations)]
-                elif key == 'position_ids':
-                    # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, num_generations, seq_len]
-                    expanded_batch[key] = value.repeat(1, num_generations, 1)
-                else:
-                    # 其他 tensor 数据，在第一个维度复制
-                    expanded_batch[key] = value.repeat(num_generations, 1)
-            
-            # 批量生成
-            outputs = self.model.generate(
-                **expanded_batch,
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9
-            ).cpu()
-            
-            # 解码所有生成的文本
-            generated_results = []
-            for i in range(num_generations):
-                generated_text = self.tokenizer.decode(
-                    outputs[i][input_length:],
+                # 解码所有生成的文本
+                generated_results = []
+                for i in range(num_generations):
+                    generated_text = self.tokenizer.decode(
+                        outputs[i][input_length:],
+                        skip_special_tokens=True
+                    )
+                    generated_results.append(generated_text)
+                
+                #TODO：分类任务作为问题时，可以直接分类，不用LLM聚类
+                # 2. 构建聚类 prompt 并让 LLM 进行聚类
+                clustering_prompt = build_clustering_prompt(generated_results)
+                clustering_input = self.tokenizer(
+                    clustering_prompt, 
+                    return_tensors='pt', 
+                    add_special_tokens=False
+                )
+                clustering_input['position_ids'] = torch.arange(
+                    clustering_input['input_ids'].shape[1]
+                ).unsqueeze(0).expand(3, -1, -1)
+                clustering_input = {k: v.to(self.device) for k, v in clustering_input.items()}
+                
+                cluster_output = self.model.generate(
+                    **clustering_input,
+                    max_new_tokens=64,
+                    do_sample=False,
+                    temperature=0.1
+                ).cpu()
+                
+                cluster_text = self.tokenizer.decode(
+                    cluster_output[0][clustering_input['input_ids'].shape[1]:],
                     skip_special_tokens=True
                 )
-                generated_results.append(generated_text)
-            
-            #TODO：分类任务作为问题时，可以直接分类，不用LLM聚类
-            # 2. 构建聚类 prompt 并让 LLM 进行聚类
-            clustering_prompt = build_clustering_prompt(generated_results)
-            clustering_input = self.tokenizer(
-                clustering_prompt, 
-                return_tensors='pt', 
-                add_special_tokens=False
-            )
-            clustering_input['position_ids'] = torch.arange(
-                clustering_input['input_ids'].shape[1]
-            ).unsqueeze(0).expand(3, -1, -1)
-            clustering_input = {k: v.to(self.device) for k, v in clustering_input.items()}
-            
-            cluster_output = self.model.generate(
-                **clustering_input,
-                max_new_tokens=64,
-                do_sample=False,
-                temperature=0.1
-            ).cpu()
-            
-            cluster_text = self.tokenizer.decode(
-                cluster_output[0][clustering_input['input_ids'].shape[1]:],
-                skip_special_tokens=True
-            )
-            
-            # 3. 解析聚类结果
-            clusters = parse_clusters(cluster_text, num_generations)
-            cluster_sizes = [len(members) for members in clusters.values()]
-            
-            # 4. 计算熵
-            entropy = compute_entropy(cluster_sizes)
-            
-            # 5. 根据熵决定是否保留结果
-            if entropy > entropy_threshold:
-                # 熵超过阈值，抛弃本轮输出
-                discarded_samples += 1
+                
+                # 3. 解析聚类结果
+                clusters = parse_clusters(cluster_text, num_generations)
+                cluster_sizes = [len(members) for members in clusters.values()]
+                
+                # 4. 计算熵
+                entropy = compute_entropy(cluster_sizes)
+                
+                # 5. 根据熵决定是否保留结果
+                if entropy > entropy_threshold:
+                    # 熵超过阈值，抛弃本轮输出
+                    discarded_samples += 1
+                    continue
+                
+                # 6. 从结果数量最多的聚类中随机选择一条
+                largest_cluster_id = max(clusters.keys(), key=lambda k: len(clusters[k]))
+                largest_cluster_members = clusters[largest_cluster_id]
+                selected_idx = random.choice(largest_cluster_members) - 1  # 转为 0-indexed
+                selected_result = generated_results[selected_idx]
+                
+                accumulated_corpus.append({
+                    'id': sample_id,
+                    'contents': selected_result
+                })
+                accumulated_ids.append(sample_id)
+            except Exception as e:
+                import traceback
+                error_detail = traceback.format_exc()
+                print(f"Error processing sample {sample_id}: {str(e)}\n详细堆栈信息:\n{error_detail}")
                 continue
-            
-            # 6. 从结果数量最多的聚类中随机选择一条
-            largest_cluster_id = max(clusters.keys(), key=lambda k: len(clusters[k]))
-            largest_cluster_members = clusters[largest_cluster_id]
-            selected_idx = random.choice(largest_cluster_members) - 1  # 转为 0-indexed
-            selected_result = generated_results[selected_idx]
-            
-            accumulated_corpus.append({
-                'id': sample_id,
-                'contents': selected_result
-            })
-            accumulated_ids.append(sample_id)
             
             # 检查是否达到存储阈值
             if len(accumulated_corpus) >= save_threshold:
@@ -635,7 +662,7 @@ def run_text_corpus_pipeline(
     # 模型参数
     llm: str = 'Qwen3-VL-8B-Instruct',
     projector: str = 'linear',
-    linear_output_dim: int = 2048,
+    linear_output_dim: int = 4096,
     # 生成参数
     num_generations: int = 5,
     entropy_threshold: float = 1.5,
@@ -649,7 +676,9 @@ def run_text_corpus_pipeline(
     resume_encoder: str = None,
     resume_linear: str = None,
     resume_lora0: str = None,
-    resume_lora1: str = None
+    resume_lora1: str = None,
+    # 其他参数
+    early_stop_batch: int = None
 ):
     """
     文本语料生成流水线：生成语料 + 构建 BM25 索引
@@ -702,8 +731,12 @@ def run_text_corpus_pipeline(
         num_generations=num_generations,
         entropy_threshold=entropy_threshold,
         save_threshold=save_threshold,
-        max_new_tokens=max_new_tokens
+        max_new_tokens=max_new_tokens,
+        early_stop_batch=early_stop_batch
     )
+
+    if early_stop_batch is not None:
+        return
     
     # 步骤 2: 构建 BM25 索引
     print("\n【步骤 2/2】构建 BM25 索引")
