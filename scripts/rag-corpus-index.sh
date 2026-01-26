@@ -1,11 +1,12 @@
-source /opt/anaconda3/etc/profile.d/conda.sh
-conda activate bishe
 cd Bishe_2
 
 LOG_FILE="logs/corpus_generate/corpus-index/$(date +%s)_$$.txt"
 mkdir -p "$(dirname "$LOG_FILE")"
 exec > >(tee -a "$LOG_FILE") 2>&1
 trap 'rc=$?; echo "[EXIT] $(date -Is) rag-corpus-index finished, exit_code=$rc, log=$LOG_FILE"' EXIT
+
+source /work/miniconda3/etc/profile.d/conda.sh
+conda activate bishe
 
 k=2000
 python -m z2.corpus_generate \
@@ -16,4 +17,6 @@ python -m z2.corpus_generate \
     --resume_log \
     --resume_encoder=models/encoder/90000/best_checkpoint.pt \
     --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
-    --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt
+    --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \
+    --generation_mode=loop \
+    --early_stop_batch=5

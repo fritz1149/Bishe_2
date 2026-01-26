@@ -347,6 +347,7 @@ class TextCorpusGenerator:
         entropy_threshold: float = 1.5,
         save_threshold: int = 1000,
         max_new_tokens: int = 512,
+        generation_mode: str = "batch",
         early_stop_batch: int = None
     ) -> None:
         """
@@ -365,6 +366,7 @@ class TextCorpusGenerator:
             entropy_threshold: 熵阈值，超过则抛弃本轮输出
             save_threshold: 累积多少样本后保存一次
             max_new_tokens: 最大生成 token 数
+            generation_mode: 生成模式（"batch" 一次性生成 / "loop" 循环逐条生成）
         """
         import math
         import random
@@ -389,9 +391,14 @@ class TextCorpusGenerator:
             collate_fn=lambda batch: collate_LLMDataset_leftpadding(batch, keep_labels=False),
             num_workers=0
         )
+
+        generation_mode = generation_mode.lower()
+        if generation_mode not in {"batch", "loop"}:
+            raise ValueError(f"generation_mode 必须是 'batch' 或 'loop'，当前: {generation_mode}")
         
         print(f"🔄 开始生成文本语料...")
         print(f"   - 每样本生成数量: {num_generations}")
+        print(f"   - 生成模式: {generation_mode}")
         print(f"   - 熵阈值: {entropy_threshold}")
         print(f"   - 存储阈值: {save_threshold}")
         
@@ -495,42 +502,74 @@ class TextCorpusGenerator:
                 sample_id = txt_filenames[0]
                 input_length = batch_data['input_ids'].shape[1]
                 
-                # 1. 对同一样本生成多条结果（通过复制 batch_data 实现批量生成）
-                expanded_batch = {}
-                for key, value in batch_data.items():
-                    if key == 'labels':
-                        continue
-                    if key == 'payloads':
-                        # payloads 是列表，需要复制每个元素
-                        expanded_batch[key] = [value[0] for _ in range(num_generations)]
-                    elif key == 'position_ids':
-                        # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, num_generations, seq_len]
-                        expanded_batch[key] = value.repeat(1, num_generations, 1)
-                    else:
-                        # 其他 tensor 数据，在第一个维度复制
-                        expanded_batch[key] = value.repeat(num_generations, 1)
-                
-                # 批量生成
-                outputs = self.model.generate(
-                    **expanded_batch,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9
-                ).cpu()
+                if generation_mode == "batch":
+                    # 1. 对同一样本生成多条结果（通过复制 batch_data 实现批量生成）
+                    expanded_batch = {}
+                    for key, value in batch_data.items():
+                        if key == 'labels':
+                            continue
+                        if key == 'payloads':
+                            # payloads 是列表，需要复制每个元素
+                            expanded_batch[key] = [value[0] for _ in range(num_generations)]
+                        elif key == 'position_ids':
+                            # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, num_generations, seq_len]
+                            expanded_batch[key] = value.repeat(1, num_generations, 1)
+                        else:
+                            # 其他 tensor 数据，在第一个维度复制
+                            expanded_batch[key] = value.repeat(num_generations, 1)
+
+                    # expanded_batch = {
+                    #     k: (
+                    #         [x.to(self.device) if torch.is_tensor(x) else x for x in v]
+                    #         if isinstance(v, list)
+                    #         else (v.to(self.device) if torch.is_tensor(v) else v)
+                    #     )
+                    #     for k, v in expanded_batch.items()
+                    # }
+                    
+                    # 批量生成
+                    outputs = self.model.generate(
+                        **expanded_batch,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=True,
+                        temperature=0.7,
+                        top_p=0.9
+                    ).cpu()
+                else:
+                    # 逐条生成（循环 num_generations 次，每次只处理一条数据）
+                    outputs_list = []
+                    for _ in range(num_generations):
+                        output = self.model.generate(
+                            **batch_data,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=True,
+                            temperature=0.7,
+                            top_p=0.9
+                        ).cpu()
+                        outputs_list.append(output[0])
+
+                    pad_token_id = (
+                        self.tokenizer.pad_token_id
+                        if self.tokenizer.pad_token_id is not None
+                        else 0
+                    )
+                    outputs = torch.nn.utils.rnn.pad_sequence(
+                        outputs_list,
+                        batch_first=True,
+                        padding_value=pad_token_id
+                    )
                 
                 if early_stop_batch is not None:
                     accumulated_corpus.append({
                         'id': sample_id,
                         'payloads_len': batch_data['payloads'][0][0].shape[0],
-                        'position_ids_shape': batch_data['position_ids'].shape,
-                        'input_ids_shape': batch_data['input_ids'].shape,
-                        'labels_shape': batch_data['labels'].shape,
-                        'attention_mask_shape': batch_data['attention_mask'].shape,
-                        'input_ids': ' '.join([str(x.item()) for x in batch_data['input_ids'][0]]),
-                        'labels': ' '.join([str(x.item()) for x in batch_data['labels'][0]]),
+                        'position_ids_shape': list(batch_data['position_ids'].shape),
+                        'input_ids_shape': list(batch_data['input_ids'].shape),
+                        'attention_mask_shape': list(batch_data['attention_mask'].shape),
+                        'input_ids_decoded': self.tokenizer.decode(batch_data['input_ids'][0], skip_special_tokens=False),
                         'attention_mask': ' '.join([str(x.item()) for x in batch_data['attention_mask'][0]]),
-                        'outputs': outputs
+                        'outputs_shape': list(outputs.shape),
+                        'outputs_decoded': [self.tokenizer.decode(outputs[j], skip_special_tokens=False) for j in range(outputs.shape[0])]
                     })
                     continue
                 # 解码所有生成的文本
@@ -668,6 +707,7 @@ def run_text_corpus_pipeline(
     entropy_threshold: float = 1.5,
     save_threshold: int = 1000,
     max_new_tokens: int = 512,
+    generation_mode: str = "batch",
     # 索引参数
     analyzer_name: str = 'whitespace',
     verbose: bool = True,
@@ -695,6 +735,7 @@ def run_text_corpus_pipeline(
         entropy_threshold: 熵阈值
         save_threshold: 存储阈值
         max_new_tokens: 最大生成 token 数
+        generation_mode: 生成模式（"batch" 一次性生成 / "loop" 循环逐条生成）
         analyzer_name: Lucene 分析器名称
         device: 设备
         verbose: 是否打印详细信息
@@ -732,6 +773,7 @@ def run_text_corpus_pipeline(
         entropy_threshold=entropy_threshold,
         save_threshold=save_threshold,
         max_new_tokens=max_new_tokens,
+        generation_mode=generation_mode,
         early_stop_batch=early_stop_batch
     )
 
