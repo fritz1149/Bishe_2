@@ -18,5 +18,5 @@ python -m z2.corpus_generate \
     --resume_encoder=models/encoder/90000/best_checkpoint.pt \
     --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
     --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \
-    --generation_mode=loop \
-    --early_stop_batch=5
+    --generation_mode=batch \
+    --early_stop_batch=20

@@ -347,6 +347,9 @@ class TextCorpusGenerator:
         entropy_threshold: float = 1.5,
         save_threshold: int = 1000,
         max_new_tokens: int = 512,
+        min_new_tokens: int = 64,
+        temperature: float = 0.7,
+        repetition_penalty: float = 1.25,
         generation_mode: str = "batch",
         early_stop_batch: int = None
     ) -> None:
@@ -387,7 +390,7 @@ class TextCorpusGenerator:
         dataloader = DataLoader(
             dataset,
             batch_size=1,
-            shuffle=False,
+            shuffle=True,
             collate_fn=lambda batch: collate_LLMDataset_leftpadding(batch, keep_labels=False),
             num_workers=0
         )
@@ -401,6 +404,13 @@ class TextCorpusGenerator:
         print(f"   - 生成模式: {generation_mode}")
         print(f"   - 熵阈值: {entropy_threshold}")
         print(f"   - 存储阈值: {save_threshold}")
+        print(f"   - 最大生成token数: {max_new_tokens}")
+        print(f"   - 最小生成token数: {min_new_tokens}")
+        print(f"   - 温度: {temperature}")
+        print(f"   - 重复惩罚: {repetition_penalty}")
+        if early_stop_batch is not None:
+            print(f"   - 提前停止批次: {early_stop_batch}")
+
         
         total_samples = 0
         discarded_samples = 0
@@ -495,7 +505,7 @@ class TextCorpusGenerator:
         i = 0
         for batch_data, txt_filenames in tqdm(dataloader, desc="生成语料"):
             i += 1
-            if early_stop_batch is not None and i >= early_stop_batch:
+            if early_stop_batch is not None and i > early_stop_batch:
                 break
             try:
                 # batch_size=1，所以 txt_filenames 只有一个元素
@@ -510,6 +520,7 @@ class TextCorpusGenerator:
                             continue
                         if key == 'payloads':
                             # payloads 是列表，需要复制每个元素
+                            assert len(value) == 1 and isinstance(value[0], tuple) and len(value[0]) == 3
                             expanded_batch[key] = [value[0] for _ in range(num_generations)]
                         elif key == 'position_ids':
                             # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, num_generations, seq_len]
@@ -531,8 +542,10 @@ class TextCorpusGenerator:
                     outputs = self.model.generate(
                         **expanded_batch,
                         max_new_tokens=max_new_tokens,
+                        # min_new_tokens=min_new_tokens,
+                        repetition_penalty=repetition_penalty,
                         do_sample=True,
-                        temperature=0.7,
+                        temperature=temperature,
                         top_p=0.9
                     ).cpu()
                 else:
@@ -542,9 +555,11 @@ class TextCorpusGenerator:
                         output = self.model.generate(
                             **batch_data,
                             max_new_tokens=max_new_tokens,
+                            min_new_tokens=min_new_tokens,
+                            repetition_penalty=repetition_penalty,
                             do_sample=True,
-                            temperature=0.7,
-                            top_p=0.9
+                            temperature=temperature,
+                            top_p=0.9,
                         ).cpu()
                         outputs_list.append(output[0])
 
