@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 from typing import List, Dict, Optional, Tuple, Literal
 from pyserini.index.lucene import LuceneIndexer
 from pyserini.search.lucene import LuceneSearcher
@@ -51,75 +53,54 @@ def build_index(
     Example:
         >>> build_index('corpus_dir/', index_dir='my_index', language='zh')
     """
+    if verbose:
+        print(f"🔧 构建 BM25 索引")
+        print(f"   - 语料目录: {corpus_path}")
+        print(f"   - 索引目录: {index_dir}")
+        print(f"   - 分析器: {analyzer_name}")
+        print(f"   - 语言: {language}")
+    import sys
+    sys.stdout.flush()
+    
     if not os.path.exists(corpus_path):
         raise FileNotFoundError(f"语料目录不存在: {corpus_path}")
     
-    # 获取所有 jsonl 文件
-    jsonl_files = [f for f in os.listdir(corpus_path) if f.endswith('.jsonl')]
-    if not jsonl_files:
-        raise FileNotFoundError(f"目录 {corpus_path} 中没有找到 .jsonl 文件")
-    
-    jsonl_files.sort()  # 按文件名排序
-    
-    # 创建索引器
-    # 使用默认的 BM25 参数配置
+    if os.path.isdir(corpus_path):
+        jsonl_files = [f for f in os.listdir(corpus_path) if f.endswith('.jsonl')]
+        if not jsonl_files:
+            raise FileNotFoundError(f"目录 {corpus_path} 中没有找到 .jsonl 文件")
+    elif os.path.isfile(corpus_path):
+        if not corpus_path.endswith('.jsonl'):
+            raise ValueError(f"语料文件必须是 .jsonl 格式: {corpus_path}")
+    else:
+        raise FileNotFoundError(f"语料路径不存在: {corpus_path}")
+
+    os.makedirs(index_dir, exist_ok=True)
     args = [
-        '-pretokenized',  # 使用预分词
-        '-storeRaw',      # 存储原始文本
-        '-storeDocvectors',  # 存储文档向量
-        '-storePositions',   # 存储位置信息
+        sys.executable,
+        '-m',
+        'pyserini.index.lucene',
+        '--collection', 'JsonCollection',
+        '--input', corpus_path,
+        '--index', index_dir,
+        '--generator', 'DefaultLuceneDocumentGenerator',
+        '--threads', '1',
+        '--storePositions',
+        '--storeDocvectors',
+        '--storeRaw',
     ]
-    
-    index_writer = LuceneIndexer(index_dir, args=args)
-    
-    total_docs = 0
-    file_count = 0
-    
-    for jsonl_file in jsonl_files:
-        file_path = os.path.join(corpus_path, jsonl_file)
-        file_docs = 0
-        
-        if verbose:
-            print(f"📖 处理文件: {jsonl_file}")
-        
-        docs = []
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    doc = json.loads(line)
-                    # 对内容进行分词
-                    tokenized_contents = tokenize_text(doc['contents'], language)
-                    # LuceneIndexer 使用字典格式添加文档
-                    docs.append({
-                        'id': doc['id'],
-                        'contents': tokenized_contents
-                    })
-                    total_docs += 1
-                    file_docs += 1
-                except json.JSONDecodeError as e:
-                    print(f"⚠️  警告: 文件 {jsonl_file} 第 {line_num} 行 JSON 解析错误: {e}")
-                except KeyError as e:
-                    print(f"⚠️  警告: 文件 {jsonl_file} 第 {line_num} 行缺少字段 {e}")
-        
-        # 批量添加文档
-        if docs:
-            index_writer.add_batch_dict(docs)
-        
-        if verbose:
-            print(f"   - 文档数: {file_docs}")
-        file_count += 1
-    
-    # 关闭索引器
-    index_writer.close()
-    
+    if language:
+        args += ['--language', language]
+
+    if verbose:
+        print("🚀 调用 Pyserini 一次性构建索引")
+        print("   " + " ".join(args))
+
+    subprocess.run(args, check=True)
+
     if verbose:
         print(f"\n✅ 索引构建完成！")
         print(f"   - 索引目录: {index_dir}")
-        print(f"   - 处理文件数: {file_count}")
-        print(f"   - 文档总数: {total_docs}")
 
 
 def search(
@@ -186,3 +167,7 @@ def search(
         print(f"\n✅ 检索完成，返回 {len(results)} 个结果")
     
     return results
+
+if __name__ == '__main__':
+    import fire
+    fire.Fire()

@@ -9,14 +9,7 @@ source /work/miniconda3/etc/profile.d/conda.sh
 conda activate bishe
 
 k=2000
-python -m z2.corpus_generate \
-    run_text_corpus_pipeline \
-    --dataset_path=datasets/rag-corpus/$k/3mixed \
-    --corpus_output_dir=datasets/rag-corpus-index/$k \
-    --index_output_dir=datasets/rag-corpus-index/$k/index \
-    --resume_log \
-    --resume_encoder=models/encoder/90000/best_checkpoint.pt \
-    --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
-    --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \
-    --generation_mode=batch \
-    --early_stop_batch=20
+python -m z2.RAG.retriever.BM25 \
+    build_index \
+    --corpus_path=datasets/rag-corpus-index/$k \
+    --index_dir=datasets/rag-corpus-index/$k/index
