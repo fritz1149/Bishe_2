@@ -29,7 +29,7 @@ class TextCorpusGenerator:
             device: 设备 ('cuda' 或 'cpu')，None 则自动选择
         """
         self.args = args
-        self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        # self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.model = None
         self.tokenizer = None
     
@@ -47,7 +47,7 @@ class TextCorpusGenerator:
             
             self.tokenizer = AutoTokenizer.from_pretrained(self.args.llm)
             
-            print(f"✅ ProposeModel 已加载 (设备: {self.device})")
+            print(f"✅ ProposeModel 已加载")
     
     @torch.no_grad()
     def generate_corpus(
@@ -216,10 +216,13 @@ class TextCorpusGenerator:
             return prompt
         
         # 分批处理和存储
-        i = 0
+        batch_idx = 0
+        import sys
         for batch_data, txt_filenames in tqdm(dataloader, desc="生成语料"):
-            i += 1
-            if early_stop_batch is not None and i > early_stop_batch:
+            batch_idx += 1
+            print(f"batch_idx: {batch_idx}")
+            sys.stdout.flush()
+            if early_stop_batch is not None and batch_idx > early_stop_batch:
                 break
             try:
                 # batch_size=1，所以 txt_filenames 只有一个元素
