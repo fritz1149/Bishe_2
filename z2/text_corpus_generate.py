@@ -292,20 +292,6 @@ class TextCorpusGenerator:
                         batch_first=True,
                         padding_value=pad_token_id
                     )
-                
-                if early_stop_batch is not None:
-                    accumulated_corpus.append({
-                        'id': sample_id,
-                        'payloads_len': batch_data['payloads'][0][0].shape[0],
-                        'position_ids_shape': list(batch_data['position_ids'].shape),
-                        'input_ids_shape': list(batch_data['input_ids'].shape),
-                        'attention_mask_shape': list(batch_data['attention_mask'].shape),
-                        'input_ids_decoded': self.tokenizer.decode(batch_data['input_ids'][0], skip_special_tokens=False),
-                        'attention_mask': ' '.join([str(x.item()) for x in batch_data['attention_mask'][0]]),
-                        'outputs_shape': list(outputs.shape),
-                        'outputs_decoded': [self.tokenizer.decode(outputs[j], skip_special_tokens=False) for j in range(outputs.shape[0])]
-                    })
-                    continue
                 # 解码所有生成的文本
                 generated_results = []
                 for i in range(num_generations):
@@ -315,7 +301,7 @@ class TextCorpusGenerator:
                     )
                     generated_results.append(generated_text)
                 
-                if skip_clustering:
+                if skip_clustering or early_stop_batch is not None:
                     # 跳过聚类筛选，直接保存所有生成结果
                     # for idx, result in enumerate(generated_results):
                     #     accumulated_corpus.append({
@@ -528,11 +514,8 @@ def run_text_corpus_pipeline(
         early_stop_batch=early_stop_batch,
         skip_clustering=skip_clustering
     )
-
-    if early_stop_batch is not None:
-        return
     
-    if skip_indexing:
+    if skip_indexing or early_stop_batch is not None:
         print("\n" + "=" * 60)
         print("✅ 语料生成完成，跳过构建索引步骤")
         print("=" * 60)
