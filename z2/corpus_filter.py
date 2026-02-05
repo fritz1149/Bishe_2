@@ -81,10 +81,10 @@ class CorpusFilter:
 
 1. 网络流量本身的信息将不会被给出，请仅根据问答进行打分。
 2. 不要重复给定的问题和回答。
-
-请严格按照以下格式输出每条语料的评分，每行一条：
-语料1: 语言自然度=X, 条理性=Y, 问答对应度=Z。
-语料2: 语言自然度=X, 条理性=Y, 问答对应度=Z。
+3. 只输出评分结果，不要输出其他解释。
+4. 分数必须是1-10之间的整数。
+5. 必须对所有语料都进行评分。
+6. 语言自然度低于5分的语料将被排除，其他语料则按语言自然度、条理性、问答对应度的顺序排序，取排名第一的语料作为该 id 的唯一留存语料。
 
 问题：
 {data['question']}
@@ -93,10 +93,11 @@ class CorpusFilter:
 
 ...
 
-注意：
-- 只输出评分结果，不要输出其他解释
-- 分数必须是1-10之间的整数
-- 必须对所有语料都进行评分<|im_end|>
+请严格按照以下格式输出每条语料的评分，每行一条：
+语料1: 语言自然度=X, 条理性=Y, 问答对应度=Z。
+语料2: 语言自然度=X, 条理性=Y, 问答对应度=Z。
+/no_think
+<|im_end|>
 <|im_start|>assistant
 """
         return prompt
@@ -218,8 +219,11 @@ class CorpusFilter:
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new_tokens,
-                    do_sample=False,
-                    temperature=0.1,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.8,
+                    top_k=20,
+                    min_p=0,
                     pad_token_id=self.tokenizer.pad_token_id
                 )
                 
@@ -227,6 +231,12 @@ class CorpusFilter:
                     outputs[0][inputs['input_ids'].shape[1]:],
                     skip_special_tokens=True
                 )
+                if verbose:
+                    origin_text = self.tokenizer.decode(
+                        outputs[0],
+                        skip_special_tokens=True
+                    )
+                    print(f"📝 ID {sample_id} 评分结果: {origin_text}...")
                 
                 # 解析评分
                 scores = self._parse_scores(score_text, len(contents))
@@ -257,7 +267,7 @@ class CorpusFilter:
                 retained_corpus.append({
                     'id': sample_id,
                     'question': data.get('question', ''),
-                    'contents': contents[best_idx],
+                    'contents': f'问题：{data.get("question", "")}\n回答：{contents[best_idx]}',
                     'scores': scores[best_idx]
                 })
                 retained_count += 1
@@ -269,7 +279,9 @@ class CorpusFilter:
                 discarded_count += 1
         
         # 保存结果
-        with open(output_path, 'w', encoding='utf-8') as f:
+        filtered_output_path = os.path.join(output_path, 'filtered.jsonl')
+        os.makedirs(output_path, exist_ok=True)
+        with open(filtered_output_path, 'w', encoding='utf-8') as f:
             for entry in retained_corpus:
                 f.write(json.dumps(entry, ensure_ascii=False) + '\n')
         
@@ -298,7 +310,7 @@ def run_corpus_filter_pipeline(
     input_dir: str,
     output_path: str,
     # 模型参数
-    model_path: str = "Qwen/Qwen3-8B-Instruct",
+    model_path: str = "Qwen3-1.7B",
     device: str = None,
     # 筛选参数
     naturalness_threshold: int = 5,

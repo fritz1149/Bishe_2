@@ -284,9 +284,10 @@ def generate_corpus_dataset(
             
             # 构造完整 prompt
             prompt = system_prompt + f"""接下来会给出一个流量表格，包含若干个包的头部特征和统计特征，以及在最后一列的payload。
+请就流量表格来回答以下问题：
 {question}
-回答的字数应在300到500之间
-接下来是表格：<表格开始>"""
+回答的字数应在300到500之间。
+接下来是流量表格：<表格开始>"""
             prompt_ids = _str_to_ids(prompt, type="qwen3vl")[0]
             prompt2 = """<表格结束><|im_end|>
 <|im_start|>assistant

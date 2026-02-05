@@ -60,6 +60,7 @@ class RAGRetriever:
             from z2.model import TrafficEmbedder
             print("⏳ 正在加载 TrafficEmbedder...")
             self.embedder = TrafficEmbedder(self.embedder_args).to(self.device)
+            self.embedder.resume(self.embedder_args)
             self.embedder.eval()
             print(f"✅ TrafficEmbedder 已加载 (设备: {self.device})")
     
@@ -70,6 +71,23 @@ class RAGRetriever:
             print(f"⏳ 正在加载向量索引: {self.config.vector_index_dir}")
             self.vector_index, self.vector_metadata = load_faiss_index(self.config.vector_index_dir)
             print(f"✅ 向量索引已加载 (文档数: {self.vector_metadata['num_docs']})")
+    
+    def unload_embedder(self):
+        """卸载 TrafficEmbedder 以释放显存"""
+        if self.embedder is not None:
+            del self.embedder
+            self.embedder = None
+            torch.cuda.empty_cache()
+            print("🗑️ TrafficEmbedder 已卸载，显存已释放")
+    
+    def unload_vector_index(self):
+        """卸载向量索引以释放内存"""
+        if self.vector_index is not None:
+            del self.vector_index
+            del self.vector_metadata
+            self.vector_index = None
+            self.vector_metadata = None
+            print("🗑️ 向量索引已卸载")
     
     @torch.no_grad()
     def get_traffic_embedding(self, batch_data: Dict) -> np.ndarray:
@@ -135,22 +153,10 @@ class RAGRetriever:
         from z2.RAG.retriever.BM25 import search
         return search(query, self.config.bm25_index_dir, k=k, return_contents=True)
     
-    def build_temp_bm25_index(self, corpus_list: List[Dict]) -> 'TempBM25Index':
-        """
-        为初始检索的语料构建临时 BM25 索引（内存中）
-        
-        Args:
-            corpus_list: 语料列表，每个元素为 {'id': str, 'contents': str, ...}
-        
-        Returns:
-            TempBM25Index 实例
-        """
-        return TempBM25Index(corpus_list)
-    
     def search_bm25_by_ids(
         self, 
         doc_ids: List[str]
-    ) -> List[Tuple[str, Optional[str]]]:
+    ) -> List[Dict[str, Any]]:
         """
         根据 doc_id 列表在 BM25 索引中查询对应的文本语料
         
@@ -160,7 +166,7 @@ class RAGRetriever:
             doc_ids: 文档 ID 列表
         
         Returns:
-            [(doc_id, contents), ...] 列表，contents 为 None 表示未找到
+            [{'id': str, 'contents': str, ...}, ...] 字典列表
         """
         import json
         from pyserini.search.lucene import LuceneSearcher
@@ -175,14 +181,13 @@ class RAGRetriever:
                     raw = doc.lucene_document.get('raw')
                     try:
                         doc_dict = json.loads(raw)
-                        contents = doc_dict.get('contents', raw)
                     except json.JSONDecodeError:
-                        contents = raw
-                    results.append((doc_id, contents))
-                else:
-                    results.append((doc_id, None))
+                        print(f"JSON 解析错误: {raw}")
+                        continue
+                    results.append(doc_dict)
             except Exception:
-                results.append((doc_id, None))
+                print(f"文档 {doc_id} 获取失败")
+                continue
         
         return results
 
@@ -220,7 +225,7 @@ class TempBM25Index:
         tokens = [t.strip() for t in tokens if t.strip()]
         return tokens
     
-    def search(self, query: str, k: int = 10) -> List[Tuple[str, float, str]]:
+    def search(self, query: str, k: int = 10) -> List[Dict[str, Any]]:
         """
         在临时索引中检索
         
@@ -229,7 +234,7 @@ class TempBM25Index:
             k: top-k
         
         Returns:
-            [(doc_id, score, contents), ...] 列表
+            [{'id': str, 'contents': str, 'score': float, ...}, ...] 字典列表
         """
         if self.bm25 is None or not self.corpus_list:
             return []
@@ -243,11 +248,10 @@ class TempBM25Index:
         results = []
         for idx in top_indices:
             if scores[idx] > 0:  # 只返回有分数的结果
-                results.append((
-                    self.doc_ids[idx],
-                    float(scores[idx]),
-                    self.corpus_list[idx]['contents']
-                ))
+                results.append({
+                    'score': float(scores[idx]),
+                    **self.corpus_list[idx]
+                })
         
         return results
 
@@ -290,25 +294,16 @@ def get_traffic_corelated_corpus(
     # 4. 在 BM25 语料库中查询对应的文本
     bm25_results = retriever.search_bm25_by_ids(doc_ids)
     
-    # 5. 组装结果
-    corpus_list = []
-    for doc_id, contents in bm25_results:
-        if contents is not None:
-            corpus_list.append({
-                'id': doc_id,
-                'contents': contents,
-                'score': id_to_score.get(doc_id, 0.0)
-            })
+    # 5. 添加 score 字段
+    for doc_dict in bm25_results:
+        doc_dict['score'] = id_to_score.get(doc_dict['id'], 0.0)
     
-    return corpus_list
-
+    return bm25_results
 
 def retrieve_iteratively(
-    retriever: RAGRetriever,
     generator,  # ProposeModel 实例
     tokenizer,
     batch_data: Dict,
-    question: str,
     initial_corpus: List[Dict[str, Any]],
     config: RAGConfig = None
 ) -> Dict[str, Any]:
@@ -348,12 +343,12 @@ def retrieve_iteratively(
     
     iterations = []
     all_corpus = {c['id']: c for c in initial_corpus}  # 用 dict 去重
-    retrieved_ids = set(all_corpus.keys())  # 已检索到的 ID 集合
+    retrieved_ids = set()  # 已检索到的 ID 集合
     reasoning_history = ""
     stopped_by = "max_iterations"
     
     # 构建临时 BM25 索引（用于在初始语料中检索）
-    temp_bm25_index = retriever.build_temp_bm25_index(initial_corpus)
+    temp_bm25_index = TempBM25Index(initial_corpus)
     
     device = generator.device if hasattr(generator, 'device') and generator.device else 'cuda'
     
@@ -365,15 +360,11 @@ def retrieve_iteratively(
     
     traffic_seq_len = traffic_input_ids.shape[1]
     
-    def _get_first_new_result(results: List[Tuple], retrieved_ids: set) -> Optional[Dict]:
+    def _get_first_new_result(results: List[Dict], retrieved_ids: set) -> Optional[Dict]:
         """从检索结果中获取第一个未被添加的结果"""
-        for doc_id, score, contents in results:
-            if doc_id not in retrieved_ids and contents:
-                return {
-                    'id': doc_id,
-                    'contents': contents,
-                    'score': score
-                }
+        for doc_dict in results:
+            if doc_dict['id'] not in retrieved_ids and doc_dict['contents']:
+                return doc_dict
         return None
     
     for iteration_idx in range(config.max_iterations):
@@ -388,10 +379,7 @@ def retrieve_iteratively(
 你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|>
 <|im_start|>user
 """
-        corpus_prompt = f"""根据以下网络流量相关信息，针对问题进行分析推理。
-
-问题: {question}
-
+        corpus_prompt = f"""接下来会给出一些也是针对流量信息的问答语料，这些语料所基于的流量信息将不会被给出，仅有问题和回答会被给出。可以参考其中的推理逻辑或步骤。
 相关语料:
 {corpus_text}
 
@@ -528,9 +516,10 @@ def generate_response(
     generator,  # ProposeModel 实例
     tokenizer,
     batch_data: Dict,
-    question: str,
     corpus_list: List[Dict[str, Any]],
-    max_new_tokens: int = 512
+    max_new_tokens: int = 512,
+    think_first: bool = True,
+    have_corpus: bool = True
 ) -> str:
     """
     最终生成：组合流量、问题、检索结果，使用 ProposeModel 生成答案
@@ -561,17 +550,27 @@ def generate_response(
 你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|>
 <|im_start|>user
 """
-    corpus_prompt = f"""根据以下网络流量数据和相关参考信息，回答问题。
-
-问题: {question}
-
-参考信息:
+    corpus_prompt = f"""接下来会给出一些也是针对流量信息的问答语料，这些语料所基于的流量信息将不会被给出，仅有问题和回答会被给出。可以参考其中的推理逻辑或步骤。
+相关语料:
 {corpus_text}
 
 """
     # 构建后置 prompt（生成提示部分）
-    generation_prompt = "请给出完整的答案：<|im_end|>\n<|im_start|>assistant\n"
-    
+    if think_first:
+        generation_prompt = """请严格按照以下格式输出结果：
+推理：[推理过程，不超过300字]
+类别：[分类标签]
+<|im_end|>
+<|im_start|>assistant
+"""
+    else:
+        generation_prompt = """请严格按照以下格式输出结果：
+类别：[分类标签]
+解释：[解释文本，不超过300字]
+<|im_end|>
+<|im_start|>assistant
+"""
+
     # 获取流量数据的各部分
     traffic_input_ids = batch_data['input_ids'].to(device)  # (1, traffic_seq_len)
     traffic_attention_mask = batch_data.get('attention_mask')
@@ -582,7 +581,7 @@ def generate_response(
     
     # 编码语料部分和生成提示部分
     # 将 system_prompt 和 corpus_prompt 合并
-    full_corpus_prompt = system_prompt + corpus_prompt
+    full_corpus_prompt = system_prompt + corpus_prompt if have_corpus else system_prompt
     corpus_encoding = tokenizer(full_corpus_prompt, return_tensors='pt', add_special_tokens=True)
     generation_encoding = tokenizer(generation_prompt, return_tensors='pt', add_special_tokens=False)
     
@@ -646,7 +645,8 @@ def run_rag_pipeline(
     batch_data: Dict,
     question: str,
     enable_iterative: bool = True,
-    max_new_tokens: int = 512
+    max_new_tokens: int = 512,
+    unload_embedder_after_initial: bool = True
 ) -> Dict[str, Any]:
     """
     运行完整的 RAG 流程
@@ -659,6 +659,7 @@ def run_rag_pipeline(
         question: 问题
         enable_iterative: 是否启用迭代式检索
         max_new_tokens: 最大生成 token 数
+        unload_embedder_after_initial: 初始检索完成后是否卸载 embedder 以节省显存
     
     Returns:
         {
@@ -672,6 +673,11 @@ def run_rag_pipeline(
     print("🔍 执行初始检索...")
     initial_corpus = get_traffic_corelated_corpus(retriever, batch_data)
     print(f"   - 检索到 {len(initial_corpus)} 个相关语料")
+    
+    # 初始检索完成后卸载 embedder 以节省显存
+    if unload_embedder_after_initial:
+        retriever.unload_embedder()
+        retriever.unload_vector_index()
     
     # 2. 迭代式检索（可选）
     iterative_result = None

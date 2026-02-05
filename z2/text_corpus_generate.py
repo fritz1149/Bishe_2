@@ -54,14 +54,16 @@ class TextCorpusGenerator:
         self,
         dataset_path: str,
         output_dir: str,
-        num_generations: int = 5,
+        loop_num: int = 1,
+        batch_num: int = 5,
         entropy_threshold: float = 1.5,
         save_threshold: int = 1000,
         max_new_tokens: int = 512,
         min_new_tokens: int = 64,
         temperature: float = 0.7,
-        repetition_penalty: float = 1.25,
-        generation_mode: str = "batch",
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 2,
+        continuous_repetition_penalty: float = 2.0,
         early_stop_batch: int = None,
         skip_clustering: bool = False
     ) -> None:
@@ -69,7 +71,7 @@ class TextCorpusGenerator:
         从数据集生成文本语料，使用多结果生成、LLM聚类和熵筛选
         
         对每个样本：
-        1. 生成 num_generations 条结果
+        1. 循环 loop_num 次，每次批量生成 batch_num 条结果，共 loop_num * batch_num 条
         2. 将结果拼接后输入 LLM 进行语义聚类
         3. 根据聚类结果计算熵
         4. 若熵超过阈值则抛弃本轮输出，否则从结果数量最多的聚类中随机选择一条
@@ -77,11 +79,11 @@ class TextCorpusGenerator:
         Args:
             dataset_path: 数据集目录路径
             output_dir: 输出目录路径（每批会保存到单独的文件）
-            num_generations: 每个样本生成的结果数量
+            loop_num: 循环生成的次数
+            batch_num: 每轮批量生成的数量
             entropy_threshold: 熵阈值，超过则抛弃本轮输出
             save_threshold: 累积多少样本后保存一次
             max_new_tokens: 最大生成 token 数
-            generation_mode: 生成模式（"batch" 一次性生成 / "loop" 循环逐条生成）
             skip_clustering: 是否跳过聚类筛选，直接保存所有生成结果
         """
         import math
@@ -108,13 +110,19 @@ class TextCorpusGenerator:
             num_workers=0
         )
 
-        generation_mode = generation_mode.lower()
-        if generation_mode not in {"batch", "loop"}:
-            raise ValueError(f"generation_mode 必须是 'batch' 或 'loop'，当前: {generation_mode}")
+        num_generations = loop_num * batch_num
+        if continuous_repetition_penalty is not None:
+            if continuous_repetition_penalty < 1.0:
+                raise ValueError(f"continuous_repetition_penalty 必须大于等于1.0，当前: {continuous_repetition_penalty}")
+            from .processor import ContextAwareRepetitionPenalty
+            logits_processor_list = [ContextAwareRepetitionPenalty(tokenizer=self.tokenizer, continuous_penalty=continuous_repetition_penalty)]
+        else:
+            logits_processor_list = None
         
         print(f"🔄 开始生成文本语料...")
-        print(f"   - 每样本生成数量: {num_generations}")
-        print(f"   - 生成模式: {generation_mode}")
+        print(f"   - 循环次数: {loop_num}")
+        print(f"   - 每轮批量数: {batch_num}")
+        print(f"   - 总生成数量: {num_generations}")
         print(f"   - 熵阈值: {entropy_threshold}")
         print(f"   - 存储阈值: {save_threshold}")
         print(f"   - 最大生成token数: {max_new_tokens}")
@@ -234,8 +242,10 @@ class TextCorpusGenerator:
                 if len(lines) >= 6:
                     question = lines[5]  # 第六行（索引5）
                 
-                if generation_mode == "batch":
-                    # 1. 对同一样本生成多条结果（通过复制 batch_data 实现批量生成）
+                # 循环 loop_num 次，每次批量生成 batch_num 条
+                all_outputs_list = []
+                for loop_idx in range(loop_num):
+                    # 构建批量数据（复制 batch_data 以实现批量生成）
                     expanded_batch = {}
                     for key, value in batch_data.items():
                         if key == 'labels':
@@ -243,58 +253,41 @@ class TextCorpusGenerator:
                         if key == 'payloads':
                             # payloads 是列表，需要复制每个元素
                             assert len(value) == 1 and isinstance(value[0], tuple) and len(value[0]) == 3
-                            expanded_batch[key] = [value[0] for _ in range(num_generations)]
+                            expanded_batch[key] = [value[0] for _ in range(batch_num)]
                         elif key == 'position_ids':
-                            # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, num_generations, seq_len]
-                            expanded_batch[key] = value.repeat(1, num_generations, 1)
+                            # position_ids 在第二个维度复制，形状从 [3, 1, seq_len] 变成 [3, batch_num, seq_len]
+                            expanded_batch[key] = value.repeat(1, batch_num, 1)
                         else:
                             # 其他 tensor 数据，在第一个维度复制
-                            expanded_batch[key] = value.repeat(num_generations, 1)
-
-                    # expanded_batch = {
-                    #     k: (
-                    #         [x.to(self.device) if torch.is_tensor(x) else x for x in v]
-                    #         if isinstance(v, list)
-                    #         else (v.to(self.device) if torch.is_tensor(v) else v)
-                    #     )
-                    #     for k, v in expanded_batch.items()
-                    # }
+                            expanded_batch[key] = value.repeat(batch_num, 1)
                     
                     # 批量生成
-                    outputs = self.model.generate(
+                    batch_outputs = self.model.generate(
                         **expanded_batch,
                         max_new_tokens=max_new_tokens,
-                        # min_new_tokens=min_new_tokens,
                         repetition_penalty=repetition_penalty,
+                        no_repeat_ngram_size=no_repeat_ngram_size,
+                        logits_processor=logits_processor_list,
                         do_sample=True,
                         temperature=temperature,
                         top_p=0.9
                     ).cpu()
-                else:
-                    # 逐条生成（循环 num_generations 次，每次只处理一条数据）
-                    outputs_list = []
-                    for _ in range(num_generations):
-                        output = self.model.generate(
-                            **batch_data,
-                            max_new_tokens=max_new_tokens,
-                            min_new_tokens=min_new_tokens,
-                            repetition_penalty=repetition_penalty,
-                            do_sample=True,
-                            temperature=temperature,
-                            top_p=0.9,
-                        ).cpu()
-                        outputs_list.append(output[0])
-
-                    pad_token_id = (
-                        self.tokenizer.pad_token_id
-                        if self.tokenizer.pad_token_id is not None
-                        else 0
-                    )
-                    outputs = torch.nn.utils.rnn.pad_sequence(
-                        outputs_list,
-                        batch_first=True,
-                        padding_value=pad_token_id
-                    )
+                    
+                    # 收集本轮生成的结果
+                    for i in range(batch_num):
+                        all_outputs_list.append(batch_outputs[i])
+                
+                # 合并所有生成结果
+                pad_token_id = (
+                    self.tokenizer.pad_token_id
+                    if self.tokenizer.pad_token_id is not None
+                    else 0
+                )
+                outputs = torch.nn.utils.rnn.pad_sequence(
+                    all_outputs_list,
+                    batch_first=True,
+                    padding_value=pad_token_id
+                )
                 # 解码所有生成的文本
                 generated_results = []
                 for i in range(num_generations):
@@ -441,11 +434,14 @@ def run_text_corpus_pipeline(
     projector: str = 'linear',
     linear_output_dim: int = 4096,
     # 生成参数
-    num_generations: int = 5,
     entropy_threshold: float = 1.5,
     save_threshold: int = 1000,
     max_new_tokens: int = 512,
-    generation_mode: str = "batch",
+    repetition_penalty: float = 1.0,
+    no_repeat_ngram_size: int = 0,
+    continuous_repetition_penalty: float = None,
+    loop_num: int = 1,
+    batch_num: int = 5,
     # 索引参数
     analyzer_name: str = 'whitespace',
     verbose: bool = True,
@@ -454,7 +450,6 @@ def run_text_corpus_pipeline(
     resume_encoder: str = None,
     resume_linear: str = None,
     resume_lora0: str = None,
-    resume_lora1: str = None,
     # 其他参数
     early_stop_batch: int = None,
     skip_clustering: bool = False,
@@ -494,7 +489,6 @@ def run_text_corpus_pipeline(
         resume_encoder=resume_encoder,
         resume_linear=resume_linear,
         resume_lora0=resume_lora0,
-        resume_lora1=resume_lora1,
         align1_mode=False, align2_mode=False, test_mode=False, eval_mode=True,
         finetune_mode=False,
         projector=projector
@@ -509,13 +503,16 @@ def run_text_corpus_pipeline(
     generator.generate_corpus(
         dataset_path=dataset_path,
         output_dir=corpus_output_dir,
-        num_generations=num_generations,
         entropy_threshold=entropy_threshold,
         save_threshold=save_threshold,
         max_new_tokens=max_new_tokens,
-        generation_mode=generation_mode,
         early_stop_batch=early_stop_batch,
-        skip_clustering=skip_clustering
+        skip_clustering=skip_clustering,
+        repetition_penalty=repetition_penalty,
+        no_repeat_ngram_size=no_repeat_ngram_size,
+        continuous_repetition_penalty=continuous_repetition_penalty,
+        loop_num=loop_num,
+        batch_num=batch_num
     )
     
     if skip_indexing or early_stop_batch is not None:

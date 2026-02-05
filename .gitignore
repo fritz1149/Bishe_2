@@ -8,6 +8,8 @@ models/*
 datasets/
 !datasets/rag-corpus/
 !datasets/rag-emb-index
+!datasets/zero-shot
+!datasets/rag-corpus-index
 uer/
 RAG/embedder/Qwen*/
 RAG/corpus/

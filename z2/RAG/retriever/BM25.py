@@ -137,11 +137,13 @@ def search(
         raise FileNotFoundError(f"索引目录不存在: {index_dir}")
     
     searcher = LuceneSearcher(index_dir)
-    
+    if language == 'zh':
+        searcher.set_language('zh')
+
     # 对查询进行分词
-    tokenized_query = tokenize_text(query, language)
+    # tokenized_query = tokenize_text(query, language)
     
-    hits = searcher.search(tokenized_query, k=k)
+    hits = searcher.search(query, k=k)
     
     results = []
     for hit in hits:
@@ -152,16 +154,17 @@ def search(
         if return_contents and contents:
             try:
                 doc_dict = json.loads(contents)
-                contents = doc_dict.get('contents', contents)
             except json.JSONDecodeError:
-                pass
+                continue
         
-        results.append((doc_id, score, contents))
+        results.append(doc_dict)
         
         if verbose:
             print(f"\n排名 {len(results)}: {doc_id} (分数: {score:.4f})")
+            if doc_dict:
+                print(f"字段: {doc_dict.keys()}")
             if contents:
-                print(f"内容: {contents[:200]}..." if len(contents) > 200 else f"内容: {contents}")
+                print(f"内容: {doc_dict['contents'][:200]}..." if len(doc_dict['contents']) > 200 else f"内容: {doc_dict['contents']}")
     
     if verbose:
         print(f"\n✅ 检索完成，返回 {len(results)} 个结果")
