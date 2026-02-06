@@ -178,7 +178,7 @@ class RAGRetriever:
             try:
                 doc = searcher.doc(doc_id)
                 if doc is not None:
-                    raw = doc.lucene_document.get('raw')
+                    raw = doc.lucene_document().get('raw')
                     try:
                         doc_dict = json.loads(raw)
                     except json.JSONDecodeError:
@@ -285,7 +285,7 @@ def get_traffic_corelated_corpus(
     query_embedding = retriever.get_traffic_embedding(batch_data)
     
     # 2. 在向量库中检索 top-k
-    vector_results = retriever.search_vector_index(query_embedding[0], k=top_k)
+    vector_results = retriever.search_vector_index(query_embedding, k=top_k)
     
     # 3. 获取 id 列表
     doc_ids = [doc_id for doc_id, _ in vector_results]
@@ -419,18 +419,18 @@ def retrieve_iteratively(
         # 语料部分: 0, 1, 2, ..., corpus_seq_len-1
         # 流量部分: 在原 position_ids 基础上加上 corpus_seq_len 的偏移
         # 推理部分: corpus_seq_len + traffic_seq_len, ..., total_seq_len-1
-        corpus_position_ids = torch.arange(corpus_seq_len, dtype=torch.long, device=device).unsqueeze(0)
+        corpus_position_ids = torch.arange(corpus_seq_len, dtype=torch.long, device=device).unsqueeze(0).expand(3, -1, -1)
         adjusted_traffic_position_ids = traffic_position_ids.to(device) + corpus_seq_len
         reasoning_position_ids = torch.arange(
             corpus_seq_len + traffic_seq_len, total_seq_len,
             dtype=torch.long, device=device
-        ).unsqueeze(0)
+        ).unsqueeze(0).expand(3, -1, -1)
         
         combined_position_ids = torch.cat([
             corpus_position_ids, 
             adjusted_traffic_position_ids, 
             reasoning_position_ids
-        ], dim=1)
+        ], dim=2)
         
         # 生成推理
         with torch.no_grad():
@@ -557,7 +557,8 @@ def generate_response(
 """
     # 构建后置 prompt（生成提示部分）
     if think_first:
-        generation_prompt = """请严格按照以下格式输出结果：
+        generation_prompt = """请注意，给出的流量表格中，ip和端口均经过了随机化处理，因此请不要根据这些字段的取值范围来判断。
+请严格按照以下格式输出结果：
 推理：[推理过程，不超过300字]
 类别：[分类标签]
 <|im_end|>
@@ -602,18 +603,21 @@ def generate_response(
     # 语料部分: 0, 1, 2, ..., corpus_seq_len-1
     # 流量部分: 在原 position_ids 基础上加上 corpus_seq_len 的偏移
     # 生成提示部分: corpus_seq_len + traffic_seq_len, ..., total_seq_len-1
-    corpus_position_ids = torch.arange(corpus_seq_len, dtype=torch.long, device=device).unsqueeze(0)
+    corpus_position_ids = torch.arange(corpus_seq_len, dtype=torch.long, device=device).unsqueeze(0).expand(3, -1, -1)
     adjusted_traffic_position_ids = traffic_position_ids.to(device) + corpus_seq_len
     generation_position_ids = torch.arange(
         corpus_seq_len + traffic_seq_len, total_seq_len,
         dtype=torch.long, device=device
-    ).unsqueeze(0)
+    ).unsqueeze(0).expand(3, -1, -1)
+    # print(corpus_position_ids.shape)
+    # print(adjusted_traffic_position_ids.shape)
+    # print(generation_position_ids.shape)
     
     combined_position_ids = torch.cat([
         corpus_position_ids, 
         adjusted_traffic_position_ids, 
         generation_position_ids
-    ], dim=1)
+    ], dim=2)
     
     # 生成
     with torch.no_grad():
@@ -634,8 +638,15 @@ def generate_response(
         output_ids[0][combined_input_ids.shape[1]:],
         skip_special_tokens=True
     )
-    
+
     return response.strip()
+
+    # original = tokenizer.decode(
+    #     output_ids[0],
+    #     skip_special_tokens=True
+    # )
+    
+    # return response.strip(), original.strip()
 
 
 def run_rag_pipeline(

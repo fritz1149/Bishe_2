@@ -84,6 +84,8 @@ class InferenceConfig:
     save_predictions: bool = True
     verbose: bool = True
 
+    early_stop: Optional[int] = None
+
 
 class InferenceEngine:
     """推理引擎"""
@@ -121,16 +123,16 @@ class InferenceEngine:
         layers_per_gpu = 36 // num_gpus
         
         device_map = {
-            "model.language_model.embed_tokens": "cuda:0",
-            "model.language_model.norm": f"cuda:{num_gpus-1}",
-            "lm_head": f"cuda:{num_gpus-1}",
-            "model.visual": "cuda:0",
-            "model.language_model.rotary_emb": "cuda:0",
+            "base_model.model.model.language_model.embed_tokens": "cuda:0",
+            "base_model.model.model.language_model.norm": f"cuda:{num_gpus-1}",
+            "base_model.model.lm_head": f"cuda:{num_gpus-1}",
+            "base_model.model.model.visual": "cuda:0",
+            "base_model.model.model.language_model.rotary_emb": "cuda:0",
         }
         
         for i in range(36):
             gpu_id = min(i // layers_per_gpu, num_gpus - 1)
-            device_map[f"model.language_model.layers.{i}"] = f"cuda:{gpu_id}"
+            device_map[f"base_model.model.model.language_model.layers.{i}"] = f"cuda:{gpu_id}"
         
         return device_map
     
@@ -172,9 +174,7 @@ class InferenceEngine:
         if self.config.parallel_mode:
             device_map = self._get_device_map()
             if device_map:
-                from accelerate import dispatch_model
-                self.generator = dispatch_model(self.generator, device_map=device_map)
-                print(f"✅ ProposeModel 已分配到多GPU")
+                self.generator.dispatch(device_map)
         else:
             self.generator = self.generator.to(self.device)
         
@@ -286,20 +286,24 @@ class SimpleInference:
         print("=" * 60)
         
         for batch_idx, data in enumerate(tqdm(dataloader, desc="推理进度")):
+            if self.config.early_stop is not None and batch_idx >= self.config.early_stop:
+                break
+
             batch_data, label = data
             
             generated_text = generate_response(
-                model=self.engine.generator,
+                generator=self.engine.generator,
                 tokenizer=self.engine.tokenizer,
                 batch_data=batch_data,
                 max_new_tokens=self.config.max_new_tokens,
                 think_first=self.config.think_first,
-                have_corpus=False
+                have_corpus=False,
+                corpus_list=[]
             )
                 
             result = {
                 'batch_idx': batch_idx,
-                'sample_idx': batch_idx * self.config.batch_size + i,
+                'sample_idx': batch_idx * self.config.batch_size,
                 'generated_text': generated_text,
                 'label': label,
             }
@@ -347,6 +351,9 @@ class ComplexInference:
         print("=" * 60)
         
         for batch_idx, batch_data in enumerate(tqdm(dataloader, desc="初始检索")):
+            if self.config.early_stop is not None and batch_idx >= self.config.early_stop:
+                break
+
             batch_data, label = batch_data
             
             try:
@@ -372,7 +379,9 @@ class ComplexInference:
                     print(f"   样本 {batch_idx}: 检索到 {len(initial_corpus)} 个语料")
                     
             except Exception as e:
+                import traceback
                 print(f"⚠️ 样本 {batch_idx} 初始检索失败: {e}")
+                traceback.print_exc()
                 initial_retrieval_results.append({
                     'batch_idx': batch_idx,
                     'batch_data': batch_data,
@@ -425,7 +434,10 @@ class ComplexInference:
             max_iterations=self.config.max_iterations
         )
         
-        for item in tqdm(initial_retrieval_results, desc="推理进度"):
+        for loop_idx, item in enumerate(tqdm(initial_retrieval_results, desc="推理进度")):
+            if self.config.early_stop is not None and loop_idx >= self.config.early_stop:
+                break
+
             batch_idx = item['batch_idx']
             batch_data = item['batch_data']
             initial_corpus = item['initial_corpus']
@@ -447,16 +459,12 @@ class ComplexInference:
                 final_corpus = initial_corpus
                 
                 if self.config.enable_iterative and initial_corpus:
-                    # 为当前样本动态创建临时 BM25 索引
-                    temp_bm25_index = TempBM25Index(initial_corpus)
-                    
                     # 执行迭代检索（不需要 retriever，因为只使用临时索引）
                     iterative_result = retrieve_iteratively(
                         generator=self.engine.generator,
                         tokenizer=self.engine.tokenizer,
                         batch_data=batch_data,
                         initial_corpus=initial_corpus,
-                        temp_bm25_index=temp_bm25_index,
                         config=rag_config
                     )
                     final_corpus = iterative_result['all_corpus']
@@ -582,12 +590,14 @@ class MetricsCalculator:
             return {v: int(k) for k, v in id2label.items()}
 
         label2id = _get_label2id(id2label)
+        print(f"\n📊 标签映射 (label2id): {_get_label2id(id2label) if id2label else 'None'}")
+
         
         for result in results:
             label = result.get('label')
             assert label is not None
             # 转换 ground truth
-            ground_truths.append(label2id[str(label)])
+            ground_truths.append(label2id[str(label[0])])
 
             if 'error' in result:
                 predictions.append(len(label2id))
@@ -679,7 +689,8 @@ def run_inference(
     parallel_mode: bool = False,
     # 输出配置
     output_dir: str = "./inference_results",
-    verbose: bool = True
+    verbose: bool = True,
+    early_stop: Optional[int] = None
 ):
     """
     运行推理测试
@@ -732,7 +743,8 @@ def run_inference(
         device=device,
         parallel_mode=parallel_mode,
         output_dir=output_dir,
-        verbose=verbose
+        verbose=verbose,
+        early_stop=early_stop
     )
     
     # 创建引擎
@@ -796,7 +808,7 @@ def run_inference(
     print("✅ 推理测试完成")
     print("=" * 60)
     
-    return results, metrics
+    # return results, metrics
 
 if __name__ == "__main__":
     import fire
