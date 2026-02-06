@@ -17,7 +17,6 @@ max_iterations=3;
 
 python -m z2.inference_test \
   --mode="complex" \
-  --early_stop=20 \
   --resume_encoder=models/encoder/90000/best_checkpoint.pt \
   --resume_lora0_0=models/alignment1/3mixed/300/best_checkpoint.pt \
   --resume_linear_0=models/alignment2/3mixed/1800-500/best_checkpoint.pt \

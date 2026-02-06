@@ -9,6 +9,18 @@ from pyserini.analysis import get_lucene_analyzer
 from z2.RAG.utils import save_corpus
 import jieba
 
+# 模块级 LuceneSearcher 缓存，避免重复创建实例导致 Java 堆内存耗尽
+_searcher_cache: Dict[str, LuceneSearcher] = {}
+
+def _get_searcher(index_dir: str, language: str = 'zh') -> LuceneSearcher:
+    """获取或创建缓存的 LuceneSearcher 实例"""
+    if index_dir not in _searcher_cache:
+        searcher = LuceneSearcher(index_dir)
+        if language == 'zh':
+            searcher.set_language('zh')
+        _searcher_cache[index_dir] = searcher
+    return _searcher_cache[index_dir]
+
 
 def tokenize_text(text: str, language: Literal['zh', 'en'] = 'zh') -> str:
     """
@@ -136,9 +148,7 @@ def search(
     if not os.path.exists(index_dir):
         raise FileNotFoundError(f"索引目录不存在: {index_dir}")
     
-    searcher = LuceneSearcher(index_dir)
-    if language == 'zh':
-        searcher.set_language('zh')
+    searcher = _get_searcher(index_dir, language)
 
     # 对查询进行分词
     # tokenized_query = tokenize_text(query, language)

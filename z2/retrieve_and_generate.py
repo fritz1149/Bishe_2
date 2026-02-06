@@ -169,9 +169,9 @@ class RAGRetriever:
             [{'id': str, 'contents': str, ...}, ...] 字典列表
         """
         import json
-        from pyserini.search.lucene import LuceneSearcher
+        from z2.RAG.retriever.BM25 import _get_searcher
         
-        searcher = LuceneSearcher(self.config.bm25_index_dir)
+        searcher = _get_searcher(self.config.bm25_index_dir)
         
         results = []
         for doc_id in doc_ids:
