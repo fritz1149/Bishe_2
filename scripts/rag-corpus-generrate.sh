@@ -1,6 +1,6 @@
 source /opt/anaconda3/etc/profile.d/conda.sh
 conda activate bishe
-# cd Bishe_2
+# cd Bishe_2ja
 
 LOG_FILE="logs/corpus_generate/corpus-generate/$(date +%s)_$$.txt"
 mkdir -p "$(dirname "$LOG_FILE")"
