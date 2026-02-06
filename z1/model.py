@@ -11,7 +11,11 @@ from transformers.processing_utils import Unpack
 import sys
 
 def get_llm(args):
-    model = Qwen3VLForConditionalGeneration.from_pretrained(args.llm, trust_remote_code=True)
+    torch_dtype = getattr(args, 'torch_dtype', None)
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        args.llm, trust_remote_code=True,
+        torch_dtype=torch_dtype
+    )
     # tokenizer = AutoTokenizer.from_pretrained(f"./{args.llm}")
     return model
 

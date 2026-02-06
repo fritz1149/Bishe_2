@@ -78,6 +78,7 @@ class InferenceConfig:
     # 设备配置
     device: str = None  # None 表示自动选择
     parallel_mode: bool = False  # 是否使用模型并行
+    inference_dtype: str = None  # 推理精度: "bf16", "fp16", None(fp32)
     
     # 输出配置
     output_dir: str = "./inference_results"
@@ -152,6 +153,14 @@ class InferenceEngine:
         print(f"⏳ 正在加载 ProposeModel...")
         from z1.model import ProposeModel
         
+        # 解析推理精度
+        dtype_map = {'bf16': torch.bfloat16, 'fp16': torch.float16}
+        torch_dtype = dtype_map.get(self.config.inference_dtype, None)
+        if torch_dtype:
+            print(f"📐 使用 {self.config.inference_dtype} 精度加载模型")
+        else:
+            print("📐 使用默认精度 (fp32) 加载模型")
+        
         args = SimpleNamespace(
             llm=self.config.llm_generator,
             projector=self.config.projector,
@@ -164,7 +173,8 @@ class InferenceEngine:
             align1_mode=False,
             align2_mode=False,
             finetune_mode=False,
-            eval_mode=True
+            eval_mode=True,
+            torch_dtype=torch_dtype
         )
         
         self.generator = ProposeModel(args)
@@ -470,7 +480,7 @@ class ComplexInference:
                     final_corpus = iterative_result['all_corpus']
                 
                 # 最终生成
-                response = generate_response(
+                response, original = generate_response(
                     generator=self.engine.generator,
                     tokenizer=self.engine.tokenizer,
                     batch_data=batch_data,
@@ -482,6 +492,7 @@ class ComplexInference:
                     'batch_idx': batch_idx,
                     'sample_idx': batch_idx * self.config.batch_size,
                     'generated_text': response,
+                    'original_text': original,
                     'label': label,
                     'initial_corpus_count': len(initial_corpus),
                     'initial_corpus_ids': item['initial_corpus_ids'],
@@ -492,9 +503,11 @@ class ComplexInference:
                 
                 if self.config.verbose and batch_idx < 3:
                     print(f"\n--- 样本 {result['sample_idx']} ---")
-                    print(f"问题: {question}")
                     print(f"生成: {response[:200]}...")
                     print(f"初始语料数: {result['initial_corpus_count']}, 最终语料数: {result['final_corpus_count']}")
+                
+                # 每个样本处理完后清理显存
+                torch.cuda.empty_cache()
                     
             except Exception as e:
                 print(f"⚠️ 样本 {batch_idx} 推理失败: {e}")
@@ -506,6 +519,8 @@ class ComplexInference:
                     'error': str(e),
                     'label': label
                 })
+                # 出错时也清理显存，避免累积
+                torch.cuda.empty_cache()
         
         print(f"\n✅ 推理完成，共 {len(results)} 个样本")
         return results
@@ -661,7 +676,7 @@ def run_inference(
     linear_output_dim_generator: int = 4096,
     linear_output_dim_retriever: int = 2048,
     # 加载参数
-    resume_log: bool = True,
+    resume_log: bool = False,
     resume_encoder: str = None,
     resume_linear_0: str = None,
     resume_lora0_0: str = None,
@@ -687,6 +702,7 @@ def run_inference(
     # 设备配置
     device: str = None,
     parallel_mode: bool = False,
+    inference_dtype: str = None,
     # 输出配置
     output_dir: str = "./inference_results",
     verbose: bool = True,
@@ -742,6 +758,7 @@ def run_inference(
         do_sample=do_sample,
         device=device,
         parallel_mode=parallel_mode,
+        inference_dtype=inference_dtype,
         output_dir=output_dir,
         verbose=verbose,
         early_stop=early_stop

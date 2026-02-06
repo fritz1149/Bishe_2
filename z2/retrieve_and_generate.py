@@ -339,7 +339,7 @@ def retrieve_iteratively(
         }
     """
     if config is None:
-        config = retriever.config
+        raise ValueError("config 不能为 None，请传入 RAGConfig 实例")
     
     iterations = []
     all_corpus = {c['id']: c for c in initial_corpus}  # 用 dict 去重
@@ -351,6 +351,10 @@ def retrieve_iteratively(
     temp_bm25_index = TempBM25Index(initial_corpus)
     
     device = generator.device if hasattr(generator, 'device') and generator.device else 'cuda'
+    
+    # 推断 autocast dtype（循环外只检测一次）
+    model_dtype = next(generator.parameters()).dtype
+    use_autocast = model_dtype in (torch.float16, torch.bfloat16)
     
     # 获取流量数据的各部分
     traffic_input_ids = batch_data['input_ids'].to(device)  # (1, traffic_seq_len)
@@ -433,7 +437,7 @@ def retrieve_iteratively(
         ], dim=2)
         
         # 生成推理
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast('cuda', enabled=use_autocast, dtype=model_dtype if use_autocast else None):
             output_ids = generator.generate(
                 input_ids=combined_input_ids,
                 attention_mask=combined_attention_mask,
@@ -450,6 +454,12 @@ def retrieve_iteratively(
             output_ids[0][combined_input_ids.shape[1]:], 
             skip_special_tokens=True
         ).strip()
+
+        # full_output = tokenizer.decode(
+        #     output_ids[0], 
+        #     skip_special_tokens=True
+        # ).strip()
+        # print("Full output:", full_output)
         
         # 更新推理历史
         if reasoning_history:
@@ -470,9 +480,12 @@ def retrieve_iteratively(
         new_corpus = []
         if not should_stop:
             # 2.1 从整个 BM25 语料库检索
-            bm25_results = retriever.search_bm25_by_query(
+            from z2.RAG.retriever.BM25 import search as bm25_search
+            bm25_results = bm25_search(
                 new_reasoning, 
-                k=config.iterative_top_k * 5  # 多检索一些以便找到未添加的
+                config.bm25_index_dir,
+                k=config.iterative_top_k * 5,  # 多检索一些以便找到未添加的
+                return_contents=True
             )
             result_from_bm25 = _get_first_new_result(bm25_results, retrieved_ids)
             if result_from_bm25:
@@ -503,6 +516,11 @@ def retrieve_iteratively(
         
         if should_stop:
             break
+        
+        # 清理本轮迭代的中间变量
+        del combined_input_ids, combined_attention_mask, combined_position_ids
+        del corpus_ids, reasoning_ids, output_ids
+        torch.cuda.empty_cache()
     
     return {
         'iterations': iterations,
@@ -620,7 +638,10 @@ def generate_response(
     ], dim=2)
     
     # 生成
-    with torch.no_grad():
+    # 根据模型参数自动推断 autocast dtype
+    model_dtype = next(generator.parameters()).dtype
+    use_autocast = model_dtype in (torch.float16, torch.bfloat16)
+    with torch.no_grad(), torch.amp.autocast('cuda', enabled=use_autocast, dtype=model_dtype if use_autocast else None):
         output_ids = generator.generate(
             input_ids=combined_input_ids,
             attention_mask=combined_attention_mask,
@@ -639,14 +660,19 @@ def generate_response(
         skip_special_tokens=True
     )
 
-    return response.strip()
+    # return response.strip()
 
-    # original = tokenizer.decode(
-    #     output_ids[0],
-    #     skip_special_tokens=True
-    # )
+    original = tokenizer.decode(
+        output_ids[0],
+        skip_special_tokens=True
+    )
     
-    # return response.strip(), original.strip()
+    # 清理中间变量释放显存
+    del combined_input_ids, combined_attention_mask, combined_position_ids
+    del corpus_ids, generation_ids, output_ids
+    torch.cuda.empty_cache()
+    
+    return response.strip(), original.strip()
 
 
 def run_rag_pipeline(
