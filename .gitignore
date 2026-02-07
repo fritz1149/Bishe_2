@@ -10,6 +10,10 @@ datasets/*
 !datasets/rag-emb-index
 !datasets/zero-shot
 !datasets/rag-corpus-index
+!datasets/finetuning/
+datasets/finetuning/*
+!datasets/finetuning/5/
+datasets/finetuning/5/*
 !datasets/finetuning/5/App53*
 uer/
 RAG/embedder/Qwen*/
