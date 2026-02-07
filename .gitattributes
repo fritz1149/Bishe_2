@@ -7,4 +7,5 @@ datasets/rag-emb-index/** filter=lfs diff=lfs merge=lfs -text
 datasets/zero-shot/** filter=lfs diff=lfs merge=lfs -text
 datasets/rag-corpus-index/** filter=lfs diff=lfs merge=lfs -text
 models/traffic_embedder/30000-2gpu/** filter=lfs diff=lfs merge=lfs -text
+datasets/finetuning/5/App53* filter=lfs diff=lfs merge=lfs -text
 datasets/finetuning/5/App53*/** filter=lfs diff=lfs merge=lfs -text

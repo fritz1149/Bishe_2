@@ -132,6 +132,10 @@ class ProposeModel(nn.Module, GenerationMixin):
                 args.best_loss = ckpt['best_loss']
             if 'best_acc' in ckpt:
                 args.best_acc = ckpt['best_acc']
+            if 'scaler' in ckpt:
+                args._scaler_state_dict = ckpt['scaler']
+            else:
+                args._scaler_state_dict = None
 
         if getattr(args, "resume_encoder", None) and args.resume_encoder != "":
             ckpt = torch.load(args.resume_encoder, map_location="cpu", weights_only=True)

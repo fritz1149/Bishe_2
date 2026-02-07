@@ -104,11 +104,19 @@ def train(args):
     model.backbone = dispatch_model(model.backbone, device_map=device_map)
 
     args.optimizer = torch.optim.AdamW(model.parameters_(), lr=args.base_lr, betas=(args.beta_0, args.beta_1), eps=args.eps, weight_decay=args.wd)
+    # 混合精度 GradScaler
+    amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
+    scaler = torch.amp.GradScaler(enabled=(args.amp and amp_dtype == torch.float16))
     args.start_epoch = 0
     args.best_loss = float("inf")
     args.best_acc = float("-inf")
     model.resume(args)
+    # 恢复 scaler 状态（如果 checkpoint 中存在）
+    if hasattr(args, '_scaler_state_dict') and args._scaler_state_dict is not None:
+        scaler.load_state_dict(args._scaler_state_dict)
     print("start_epoch:", args.start_epoch, "best_loss:", args.best_loss, "best_acc:", args.best_acc, "optimizer:", args.optimizer.state_dict()["param_groups"])
+    if args.amp:
+        print(f"Mixed precision (AMP) enabled, dtype={args.amp_dtype}.")
     # 清理缓存以释放加载优化器状态后可能产生的内存碎片
     torch.cuda.empty_cache()
     
@@ -141,23 +149,25 @@ def train(args):
             try:
                 # forward
                 assert input_ids.shape[1] <= 4096
-                result: Qwen3VLCausalLMOutputWithPast = model(
-                    input_ids=input_ids,
-                    labels=labels_ids,
-                    payloads=payloads,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    rope_deltas=None
-                )
+                with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
+                    result: Qwen3VLCausalLMOutputWithPast = model(
+                        input_ids=input_ids,
+                        labels=labels_ids,
+                        payloads=payloads,
+                        position_ids=position_ids,
+                        attention_mask=attention_mask,
+                        rope_deltas=None
+                    )
                 # backward
                 loss = result.loss / args.accumulation_steps
                 # 显式删除result以释放内存
                 del result
-                loss.backward()
+                scaler.scale(loss).backward()
                 losses.update(loss.item(), len(labels))
                 del loss
                 if (step + 1) % args.accumulation_steps == 0:
-                    args.optimizer.step()
+                    scaler.step(args.optimizer)
+                    scaler.update()
                     scheduler.step()
                     args.optimizer.zero_grad()
                     # 在优化器步骤后清理缓存，释放梯度累积占用的内存
@@ -202,7 +212,7 @@ def train(args):
             if is_best: args.best_loss = losses.avg; args.best_acc = eval_acc
             if (epoch % args.save_freq == 0) or is_best:
                 state = dict(epoch=epoch, model=model.state_dict_(args), optimizer=args.optimizer.state_dict(), 
-                    best_loss=args.best_loss, best_acc=args.best_acc)
+                    best_loss=args.best_loss, best_acc=args.best_acc, scaler=scaler.state_dict())
                 save_checkpoint(state, is_best, args)
             lr = [param_group['lr'] for param_group in args.optimizer.param_groups]
             logs = dict(epoch=epoch, loss=losses.avg, best_loss=args.best_loss, best_acc=args.best_acc, eval_acc=eval_acc, lr=lr)
@@ -258,14 +268,16 @@ def eval(args, model = None):
     with torch.no_grad():
         for step, (input_ids, labels_ids, payloads, position_ids, attention_mask, labels) in enumerate(loader):
             assert input_ids.shape[1] <= 4096
-            result: Qwen3VLCausalLMOutputWithPast = model(
-                input_ids=input_ids,
-                labels=labels_ids,
-                payloads=payloads,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                rope_deltas=None
-            )
+            amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
+            with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
+                result: Qwen3VLCausalLMOutputWithPast = model(
+                    input_ids=input_ids,
+                    labels=labels_ids,
+                    payloads=payloads,
+                    position_ids=position_ids,
+                    attention_mask=attention_mask,
+                    rope_deltas=None
+                )
             loss = result.loss
             loss_list.append(loss.item())
     if len(loss_list) > 0:
@@ -403,6 +415,8 @@ def add_args(parser):
     parser.add_argument('--workers', type=int, default=1, help="dataloader线程数")
     parser.add_argument('--device', type=str, default='cuda', help="设备类型(cpu, cuda, mps)")
     parser.add_argument('--nodistributed', dest='distributed', action='store_false', default=True, help="禁用分布式训练")
+    parser.add_argument('--amp', action='store_true', default=False, help="启用混合精度训练(AMP)")
+    parser.add_argument('--amp_dtype', type=str, default='bf16', choices=['bf16', 'fp16'], help="混合精度数据类型(bf16或fp16)")
 
 if __name__ == "__main__":
     import argparse

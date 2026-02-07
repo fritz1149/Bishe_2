@@ -6,7 +6,9 @@ def _process_pcap(pcap_path: str, tmp_path: str):
 
     extract_str = " -e " + " -e ".join(fields) + " "
     cmd = "tshark -r " + pcap_path + extract_str + "-T fields -Y 'tcp or udp' > " + tmp_path
-    os.system(cmd)
+    ret = os.system(cmd)
+    if ret != 0:
+        raise RuntimeError(f"tshark command failed with return code {ret}: {cmd}")
 
 def process_flow_dataset(src_path: str, dest_path: str, threads: int = 1):
     """
@@ -44,13 +46,13 @@ def process_flow_dataset(src_path: str, dest_path: str, threads: int = 1):
 
     def process_single_pcap(args):
         file_path, output_path = args
-        process_pcap(file_path, output_path)
+        _process_pcap(file_path, output_path)
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
     with ThreadPoolExecutor(max_workers=max(1, threads)) as executor:
         futures = [executor.submit(process_single_pcap, args) for args in pcap_files]
-        for _ in tqdm(as_completed(futures), total=len(pcap_files), desc="处理PCAP文件", unit="file", file=sys.stdout, mininterval=0.1, dynamic_ncols=True):
-            pass
+        for future in tqdm(as_completed(futures), total=len(pcap_files), desc="处理PCAP文件", unit="file", file=sys.stdout, mininterval=0.1, dynamic_ncols=True):
+            future.result()
 
 # def generate_classify1_dataset(tmp_path: str, dest_path: str, k: int = 10000):
 #     """
@@ -154,3 +156,7 @@ def process_flow_dataset(src_path: str, dest_path: str, threads: int = 1):
     # print(merged_array[:5])
     
     # return merged_array, array_length
+
+if __name__ == '__main__':
+    import fire
+    fire.Fire()

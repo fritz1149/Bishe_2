@@ -261,7 +261,7 @@ def generate_corpus_dataset(
         sample = _LM_input(lines[:lines_used_here], None, None, answer_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True, token_type="qwen3vl")
         # 如果样本长度超过 4096，逐步减少使用的行数
         while sample["data"][-1].shape[1] > 4096 and lines_used_here > 0:
-            lines_used_here -= 2
+            lines_used_here -= 1
             sample = _LM_input(lines[:lines_used_here], None, None, answer_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True, token_type="qwen3vl")
         if sample["data"][-1].shape[1] > 4096:
             raise Exception(f"样本长度始终大于4096，即使只使用最少的行数")

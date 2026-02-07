@@ -1285,7 +1285,7 @@ def generate_alignment_dataset_2(
         gc.collect()
     close_dbs(dbs)
 
-def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 500, packet_num_in_flow: int = 5):
+def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 500):
     """
     从preprocess_path中对每个label读取k个文件，按照和generate_finetuning_dataset一样的逻辑生成原始pcap文件名称的记录。
     每个label的目录下生成三个txt文件（train.txt, val.txt, test.txt），比例为8:1:1。
@@ -1408,16 +1408,18 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
 
     print(f"每个标签采样{str(k)}个流(txt文件)，已保存到: {dest_path}")
 
-def generate_finetuning_dataset(preprocess_path: str, catalog_path: str, dest_path: str, k: int = 500, packet_num_in_flow: int = 5):
+def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", dest_path: str = "", packet_num_in_flow: int = 5):
     """
-    从catalog_path读取每个label的train.txt, val.txt, test.txt，根据其中的pcap文件名
-    从preprocess_path中读取对应的txt文件并生成微调数据集。
+    生成微调数据集。支持两种模式：
+    1. catalog模式（catalog_path非空）：从catalog_path读取每个label的train.txt, val.txt, test.txt，
+       根据其中的pcap文件名从preprocess_path中读取对应的txt文件并生成微调数据集。
+    2. 目录模式（catalog_path为空）：preprocess_path下已存在train/val/test的目录划分，
+       每个划分目录下有label子目录，直接读取所有txt文件生成数据集。缺失的划分会跳过。
 
     Args:
-        preprocess_path (str): 预处理文件的根目录，目录结构: preprocess_path/label_name/*.txt
-        catalog_path (str): catalog文件所在目录，每个label目录下有train.txt, val.txt, test.txt
+        preprocess_path (str): 预处理文件的根目录
+        catalog_path (str): catalog文件所在目录，为空则使用目录模式
         dest_path (str): 保存微调数据集的目的地目录
-        k (int): 每个标签最多采集的文件数量（已废弃，从catalog读取）
         packet_num_in_flow (int): 每个流包含的包数量
     """
     import os
@@ -1425,17 +1427,47 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str, dest_pa
     from tqdm import tqdm
     import sys
     import gc
-    
-    # 确保目标目录存在
-    os.makedirs(os.path.join(dest_path, "train"), exist_ok=True)
-    os.makedirs(os.path.join(dest_path, "val"), exist_ok=True)
-    os.makedirs(os.path.join(dest_path, "test"), exist_ok=True)
 
-    # 获取catalog_path下所有label子目录（必须是目录）
-    label_names = [name for name in os.listdir(catalog_path)
-                   if os.path.isdir(os.path.join(catalog_path, name))]
+    print("=" * 60)
+    print("开始生成微调数据集")
+    print("=" * 60)
+
+    use_catalog = catalog_path and catalog_path.strip()
+    split_names = ["train", "val", "test"]
+
+    print(f"📂 预处理路径: {preprocess_path}")
+    print(f"📂 目标路径: {dest_path}")
+    print(f"📊 每流包数: {packet_num_in_flow}")
+    print(f"🔧 模式: {'catalog模式' if use_catalog else '目录模式'}")
+    if use_catalog:
+        print(f"📂 Catalog路径: {catalog_path}")
+
+    # 确保目标目录存在
+    for split in split_names:
+        os.makedirs(os.path.join(dest_path, split), exist_ok=True)
+    print(f"✅ 已创建目标目录: {dest_path}/[train|val|test]")
+
+    # 获取所有label名称
+    if use_catalog:
+        label_names = [name for name in os.listdir(catalog_path)
+                       if os.path.isdir(os.path.join(catalog_path, name))]
+        print(f"📋 从catalog检测到 {len(label_names)} 个标签: {label_names}")
+    else:
+        # 从 preprocess_path 下已存在的 train/val/test 目录中收集所有label
+        label_set = set()
+        for split in split_names:
+            split_dir = os.path.join(preprocess_path, split)
+            if os.path.isdir(split_dir):
+                for name in os.listdir(split_dir):
+                    if os.path.isdir(os.path.join(split_dir, name)):
+                        label_set.add(name)
+        label_names = sorted(label_set)
+        detected_splits = [s for s in split_names if os.path.isdir(os.path.join(preprocess_path, s))]
+        print(f"📋 目录模式: 从 {preprocess_path} 检测到划分 {detected_splits}")
+        print(f"📋 检测到 {len(label_names)} 个标签: {label_names}")
 
     # 准备prompt
+    print("🔧 准备prompt模板...")
     system_prompt = """<|im_start|>system
 你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|> """
     prompt = system_prompt + f"""
@@ -1448,72 +1480,86 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str, dest_pa
 <|im_start|>assistant
 给定流的类别是："""
     prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
-    
-    for label in label_names:
-        label_ids = _str_to_ids(label+"<|im_end|>", type="qwen3vl")[0]
-        label_dir = os.path.join(preprocess_path, label)
-        catalog_label_dir = os.path.join(catalog_path, label)
-        
-        assert os.path.exists(catalog_label_dir) and os.path.isdir(catalog_label_dir), f"catalog目录不存在: {catalog_label_dir}"
-        assert os.path.exists(label_dir) and os.path.isdir(label_dir), f"label目录不存在: {label_dir}"
-        
-        # 定义处理单个数据集的函数
-        def process_dataset(catalog_file, dataset_name):
-            """处理单个数据集（train/val/test）并返回样本列表"""
-            samples = []
-            with open(catalog_file, "r", encoding="utf-8") as f:
-                pcap_names = [line.strip() for line in f if line.strip()]
-            
-            for pcap_name in tqdm(pcap_names, desc=f"处理{label}{dataset_name}", file=sys.stdout):
-                # 将pcap文件名后缀换成.txt
-                txt_filename = pcap_name.rsplit('.', 1)[0] + ".txt"
-                txt_filepath = os.path.join(label_dir, txt_filename)
-                
-                assert os.path.exists(txt_filepath), f"文件不存在: {txt_filepath}"
+    print("✅ Prompt模板准备完成")
+
+    total_samples = {"train": 0, "val": 0, "test": 0}
+
+    def process_txt_files(txt_filepaths, label, label_ids, dataset_name):
+        """处理一组txt文件，生成样本并保存"""
+        samples = []
+        for txt_filepath in tqdm(txt_filepaths, desc=f"  处理 {label}/{dataset_name}", file=sys.stdout):
+            try:
                 lines = open(txt_filepath, "r", encoding="utf-8").readlines()
                 assert len(lines) >= 3, f"文件行数小于3: {txt_filepath}"
-                lines_used = lines[:packet_num_in_flow]
-                try:
-                    sample = _LM_input(lines_used, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
-                except Exception as e:
-                    import traceback
-                    error_detail = traceback.format_exc()
-                    raise Exception(f"处理{txt_filepath}时发生错误: {e}\n详细堆栈信息:\n{error_detail}")
-                if sample["data"][-1].shape[1] > 4096:
-                    lines_used = lines[:3]
-                    try:
-                        sample = _LM_input(lines_used, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
-                    except Exception as e:
-                        import traceback
-                        error_detail = traceback.format_exc()
-                        raise Exception(f"处理{txt_filepath}时发生错误: {e}\n详细堆栈信息:\n{error_detail}")
-                if sample["data"][-1].shape[1] > 4096:
-                    lines_used = lines[:1]
-                    try:
-                        sample = _LM_input(lines_used, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
-                    except Exception as e:
-                        import traceback
-                        error_detail = traceback.format_exc()
-                        raise Exception(f"处理{txt_filepath}时发生错误: {e}\n详细堆栈信息:\n{error_detail}")
-                assert sample["data"][-1].shape[1] <= 4096, f"样本长度大于4096: {txt_filepath}, pcap: {pcap_name}"
+                lines_used_here = packet_num_in_flow
+                sample = _LM_input(lines[:lines_used_here], None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                while sample["data"][-1].shape[1] > 4096 and lines_used_here > 0:
+                    lines_used_here -= 1
+                    sample = _LM_input(lines[:lines_used_here], None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                assert sample["data"][-1].shape[1] <= 4096, f"样本长度大于4096: {txt_filepath}"
                 samples.append(sample)
-            
-            # 保存样本
-            assert len(samples) == len(pcap_names), f"样本数量不匹配: {catalog_file} {len(samples)} != {len(pcap_names)}"
-            if samples:
-                _dump_in_chunks(samples, os.path.join(dest_path, dataset_name), -1, name=f"{dataset_name}_{label}")
-        
-        # 处理三个数据集
-        datasets_config = [
-            ("train.txt", "train"),
-            ("val.txt", "val"),
-            ("test.txt", "test"),
-        ]
-        
-        for catalog_filename, dataset_name in datasets_config:
-            catalog_file = os.path.join(catalog_label_dir, catalog_filename)
-            process_dataset(catalog_file, dataset_name)
-            gc.collect()
+            except Exception as e:
+                print(f"    ⚠️ 处理文件失败 {txt_filepath}: {e}")
+                continue
+        if samples:
+            _dump_in_chunks(samples, os.path.join(dest_path, dataset_name), -1, name=f"{dataset_name}_{label}")
+        return len(samples)
+
+    print("\n" + "=" * 60)
+    print("开始处理各标签数据")
+    print("=" * 60)
+
+    for idx, label in enumerate(label_names, 1):
+        print(f"\n[{idx}/{len(label_names)}] 🏷️  处理标签: {label}")
+        label_ids = _str_to_ids(label+"<|im_end|>", type="qwen3vl")[0]
+
+        if use_catalog:
+            # catalog模式：从catalog读取pcap文件名，在preprocess_path/label/下找对应txt
+            label_dir = os.path.join(preprocess_path, label)
+            catalog_label_dir = os.path.join(catalog_path, label)
+            assert os.path.exists(catalog_label_dir) and os.path.isdir(catalog_label_dir), f"catalog目录不存在: {catalog_label_dir}"
+            assert os.path.exists(label_dir) and os.path.isdir(label_dir), f"label目录不存在: {label_dir}"
+
+            for catalog_filename, dataset_name in [("train.txt", "train"), ("val.txt", "val"), ("test.txt", "test")]:
+                catalog_file = os.path.join(catalog_label_dir, catalog_filename)
+                with open(catalog_file, "r", encoding="utf-8") as f:
+                    pcap_names = [line.strip() for line in f if line.strip()]
+                txt_filepaths = []
+                for pcap_name in pcap_names:
+                    txt_filename = pcap_name.rsplit('.', 1)[0] + ".txt"
+                    txt_filepath = os.path.join(label_dir, txt_filename)
+                    assert os.path.exists(txt_filepath), f"文件不存在: {txt_filepath}"
+                    txt_filepaths.append(txt_filepath)
+                n = process_txt_files(txt_filepaths, label, label_ids, dataset_name)
+                assert n == len(pcap_names), f"样本数量不匹配: {catalog_file} {n} != {len(pcap_names)}"
+                gc.collect()
+        else:
+            # 目录模式：直接从 preprocess_path/split/label/ 下读取所有txt
+            for dataset_name in split_names:
+                split_label_dir = os.path.join(preprocess_path, dataset_name, label)
+                if not os.path.isdir(split_label_dir):
+                    continue
+                txt_filepaths = sorted([
+                    os.path.join(split_label_dir, f)
+                    for f in os.listdir(split_label_dir) if f.endswith(".txt")
+                ])
+                if not txt_filepaths:
+                    continue
+                print(f"  📄 {dataset_name}: 发现 {len(txt_filepaths)} 个txt文件")
+                n = process_txt_files(txt_filepaths, label, label_ids, dataset_name)
+                total_samples[dataset_name] += n
+                print(f"    ✅ 生成 {n} 个样本")
+                gc.collect()
+
+    print("\n" + "=" * 60)
+    print("微调数据集生成完成!")
+    print("=" * 60)
+    print(f"📊 样本统计:")
+    print(f"   训练集: {total_samples['train']} 个样本")
+    print(f"   验证集: {total_samples['val']} 个样本")
+    print(f"   测试集: {total_samples['test']} 个样本")
+    print(f"   总计: {sum(total_samples.values())} 个样本")
+    print(f"📂 数据保存至: {dest_path}")
 
 if __name__ == '__main__':
     from fire import Fire
