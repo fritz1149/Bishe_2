@@ -21,6 +21,13 @@ def _get_searcher(index_dir: str, language: str = 'zh') -> LuceneSearcher:
         _searcher_cache[index_dir] = searcher
     return _searcher_cache[index_dir]
 
+def clear_searcher_cache():
+    """释放所有缓存的 LuceneSearcher 实例，回收 JVM 内存"""
+    global _searcher_cache
+    _searcher_cache.clear()
+    import gc
+    gc.collect()
+
 
 def tokenize_text(text: str, language: Literal['zh', 'en'] = 'zh') -> str:
     """

@@ -8,8 +8,9 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 trap 'rc=$?; echo "[EXIT] $(date -Is) inference finished, exit_code=$rc, log=$LOG_FILE"' EXIT
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export JAVA_TOOL_OPTIONS="-Xmx512m"
 
-dataset_name=qq;
+dataset_name=ISCX-VPN-app;
 k=500;
 corpus_k=200;
 initial_top_k=10;

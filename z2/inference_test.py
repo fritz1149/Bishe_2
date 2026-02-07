@@ -551,6 +551,11 @@ class ComplexInference:
         print("\n🗑️ 卸载 TrafficEmbedder 以释放显存...")
         self.engine.unload_retriever()
         
+        # 释放 LuceneSearcher JVM 缓存，为加载 ProposeModel 腾出系统内存
+        from z2.RAG.retriever.BM25 import clear_searcher_cache
+        clear_searcher_cache()
+        print("🗑️ LuceneSearcher JVM 缓存已释放")
+        
         # 阶段2：迭代检索与最终生成
         results = self._phase2_iterative_and_generate(initial_retrieval_results)
         
