@@ -236,7 +236,7 @@ class ProposeModel(nn.Module, GenerationMixin):
                 # print(payload_ids.shape)
                 # sys.stdout.flush()
                 payload_embeddings = self.encoder((payload_ids, attention_mask_payload, global_attention_mask_payload))
-                payload_embeddings = payload_embeddings.squeeze(1).to(text_device)
+                payload_embeddings = payload_embeddings.squeeze(1).to(dtype=inputs_embeds.dtype, device=text_device)
                 # print(payload_embeddings.shape)
                 input_payload_pos = input_ids[i] == IMAGE_PAD_ID
                 # print(input_ids[i].shape, input_payload_pos.shape, input_payload_pos.sum().item())
