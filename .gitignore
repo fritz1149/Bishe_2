@@ -6,10 +6,6 @@ models/*
 !models/alignment2/3mixed/1800-500/
 !models/traffic_embedder/30000-2gpu/
 datasets/*
-!datasets/rag-corpus/
-!datasets/rag-emb-index
-!datasets/zero-shot
-!datasets/rag-corpus-index
 !datasets/finetuning/
 datasets/finetuning/*
 !datasets/finetuning/5/
