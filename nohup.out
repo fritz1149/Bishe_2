@@ -4199,3 +4199,45 @@ Prefix dict has been built successfully.
 2026-02-07 09:46:35,516 - jieba - DEBUG - Prefix dict has been built successfully.
 推理进度:   0%|          | 1/4835 [00:09<12:52:35,  9.59s/it]推理进度:   0%|          | 2/4835 [00:18<12:24:52,  9.25s/it]推理进度:   0%|          | 3/4835 [00:28<12:57:58,  9.66s/it]推理进度:   0%|          | 4/4835 [00:36<12:08:18,  9.05s/it]推理进度:   0%|          | 5/4835 [00:42<10:22:04,  7.73s/it]推理进度:   0%|          | 6/4835 [00:51<11:00:34,  8.21s/it]推理进度:   0%|          | 7/4835 [01:01<11:48:47,  8.81s/it]推理进度:   0%|          | 8/4835 [01:09<11:27:57,  8.55s/it]推理进度:   0%|          | 9/4835 [01:15<10:17:29,  7.68s/it]推理进度:   0%|          | 10/4835 [01:23<10:35:36,  7.90s/it]推理进度:   0%|          | 11/4835 [01:35<12:06:39,  9.04s/it]推理进度:   0%|          | 12/4835 [01:38<9:56:58,  7.43s/it] 推理进度:   0%|          | 13/4835 [01:41<7:49:28,  5.84s/it]推理进度:   0%|          | 14/4835 [01:46<7:42:22,  5.75s/it]推理进度:   0%|          | 15/4835 [01:52<7:51:08,  5.86s/it]推理进度:   0%|          | 16/4835 [02:01<8:53:01,  6.64s/it]推理进度:   0%|          | 17/4835 [02:07<8:31:41,  6.37s/it]推理进度:   0%|          | 18/4835 [02:13<8:42:08,  6.50s/it]推理进度:   0%|          | 19/4835 [02:22<9:23:21,  7.02s/it]推理进度:   0%|          | 20/4835 [02:29<9:24:22,  7.03s/it]推理进度:   0%|          | 21/4835 [02:36<9:32:47,  7.14s/it]推理进度:   0%|          | 22/4835 [02:43<9:26:19,  7.06s/it]推理进度:   0%|          | 23/4835 [02:52<10:09:50,  7.60s/it]推理进度:   0%|          | 24/4835 [03:05<12:27:24,  9.32s/it]推理进度:   1%|          | 25/4835 [03:12<11:35:40,  8.68s/it]推理进度:   1%|          | 26/4835 [03:18<10:36:36,  7.94s/it]scripts/inference.sh: line 34: 721138 Killed                  python -m z2.inference_test --mode="complex" --resume_encoder=models/encoder/90000/best_checkpoint.pt --resume_lora0_0=models/alignment1/3mixed/300/best_checkpoint.pt --resume_linear_0=models/alignment2/3mixed/1800-500/best_checkpoint.pt --resume_lora0_1=models/traffic_embedder/30000-2gpu/best_checkpoint.pt --resume_linear_1=models/traffic_embedder/30000-2gpu/best_checkpoint.pt --dataset_path=datasets/zero-shot/$k/$dataset_name/test --batch_size=1 --vector_index_dir=datasets/rag-emb-index/$corpus_k/index --bm25_index_dir=datasets/rag-corpus-index/$corpus_k/index --initial_top_k=$initial_top_k --max_iterations=$max_iterations --parallel_mode --inference_dtype=bf16 --output_dir=logs/inference_results
 [EXIT] 2026-02-07T17:04:16+08:00 inference finished, exit_code=137, log=logs/inference/1770427337_721130.txt
+Not using distributed mode!
+finetune_mode: True
+align1_mode: False
+align2_mode: False
+eval_mode: False
+test_mode: False
+train_dir: datasets/finetuning/5/App53->Time/train
+test_dir: datasets/finetuning/5/App53->Time/test
+save_dir: models/finetuning/App53->Time-5
+log_freq: 20
+save_freq: 10
+resume_encoder: models/encoder/90000/best_checkpoint.pt
+resume_linear: models/alignment2/3mixed/1800-500/best_checkpoint.pt
+resume_lora0: models/alignment1/3mixed/300/best_checkpoint.pt
+resume_lora1: 
+resume_log: False
+seed: None
+epochs: 10
+batch_size: 2
+base_lr: 2e-05
+beta_0: 0.9
+beta_1: 0.999
+eps: 1e-08
+wd: 0.0001
+warmup: 0.1
+accumulation_steps: 5
+projector: linear
+linear_output_dim: 4096
+llm: Qwen3-VL-8B-Instruct
+workers: 1
+device: cuda
+distributed: False
+amp: True
+amp_dtype: bf16
+rank: 0
+world_size: 1
+is_master: True
+gpu: None
+per_device_batch_size: 2
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:01,  2.03it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:00<00:00,  2.16it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:01<00:00,  2.16it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:01<00:00,  2.57it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:01<00:00,  2.39it/s]
+scripts/z1.sh: line 31: 747037 Segmentation fault      python -m z1.framework --finetune_mode --amp --amp_dtype=bf16 --resume_encoder=models/encoder/90000/best_checkpoint.pt --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt --projector=linear --linear_output_dim=4096 --train_dir="datasets/finetuning/5/$dataset_name/train" --test_dir="datasets/finetuning/5/$dataset_name/test" --save_dir="models/finetuning/${dataset_name}-5" --llm="Qwen3-VL-8B-Instruct" --nodistributed --log_freq=20 --batch_size=2 --accumulation_steps=5 --epochs=10
+[EXIT] 2026-02-08T00:04:10+08:00 inference finished, exit_code=139, log=logs/finetune/App53->Time-1770480235.txt

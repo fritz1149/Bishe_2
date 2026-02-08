@@ -87,21 +87,18 @@ def train(args):
     model.device = torch.device('cuda:0')
     model.encoder = model.encoder.to('cuda:0')
     model.text_embedder = model.text_embedder.to('cuda:0')
-    device_map = {
-        "base_model.model.model.language_model.embed_tokens": "cuda:0",
-        "base_model.model.model.language_model.rotary_emb": "cuda:0",
-        "base_model.model.model.visual": "cuda:0",
-        "base_model.model.lm_head": "cuda:1",
-        "base_model.model.model.language_model.norm": "cuda:1",
-        **{f"base_model.model.model.language_model.layers.{i}": "cuda:0" for i in range(0, 18)},
-        **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(18, 36)},
-    }
     from dataset import CustomDataset, collate_LLMDataset
     dataset = CustomDataset(args.train_dir)
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=True,
                 num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
-    model.backbone = dispatch_model(model.backbone, device_map=device_map)
+    model.dispatch(split_layers_num=args.split_layers_num)
+
+    # torch.compile 优化
+    if args.compile:
+        print(f"Compiling model with mode={args.compile_mode}...")
+        model.backbone = torch.compile(model.backbone, mode=args.compile_mode, dynamic=True)
+        print("Model compiled.")
 
     args.optimizer = torch.optim.AdamW(model.parameters_(), lr=args.base_lr, betas=(args.beta_0, args.beta_1), eps=args.eps, weight_decay=args.wd)
     # 混合精度 GradScaler
@@ -141,7 +138,7 @@ def train(args):
         # 每个epoch开始时清理缓存，减少内存碎片
         torch.cuda.empty_cache()
         
-        model.backbone.gradient_checkpointing_enable()
+        model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         model.backbone.enable_input_require_grads()
         model.train()
         args.optimizer.zero_grad()
@@ -230,26 +227,17 @@ def eval(args, model = None):
         init_distributed(args)
         from z1.model import ProposeModel
         model = ProposeModel(args)
-        print(model)
+        # print(model)
         model.device = torch.device('cuda:0')
         model.encoder = model.encoder.to('cuda:0')
         model.text_embedder = model.text_embedder.to('cuda:0')
-        device_map = {
-            "base_model.model.model.language_model.embed_tokens": "cuda:0",
-            "base_model.model.model.language_model.rotary_emb": "cuda:0",
-            "base_model.model.model.visual": "cuda:0",
-            "base_model.model.lm_head": "cuda:1",
-            "base_model.model.model.language_model.norm": "cuda:1",
-            **{f"base_model.model.model.language_model.layers.{i}": "cuda:0" for i in range(0, 18)},
-            **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(18, 36)},
-        }
         if args.test_mode:
             new_device_map = {}
             for k, v in device_map.items():
                 new_device_map[k[len("base_model.model."):]] = v
             device_map = new_device_map
-        model.backbone = dispatch_model(model.backbone, device_map=device_map)
-        model.backbone.gradient_checkpointing_enable()
+        model.dispatch(split_layers_num=args.split_layers_num)
+        model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         model.backbone.enable_input_require_grads()
 
         model.resume(args)
@@ -417,6 +405,9 @@ def add_args(parser):
     parser.add_argument('--nodistributed', dest='distributed', action='store_false', default=True, help="禁用分布式训练")
     parser.add_argument('--amp', action='store_true', default=False, help="启用混合精度训练(AMP)")
     parser.add_argument('--amp_dtype', type=str, default='bf16', choices=['bf16', 'fp16'], help="混合精度数据类型(bf16或fp16)")
+    parser.add_argument('--split_layers_num', type=int, default=25, help="split layers num")
+    parser.add_argument('--compile', action='store_true', default=False, help="启用torch.compile加速")
+    parser.add_argument('--compile_mode', type=str, default='reduce-overhead', choices=['default', 'reduce-overhead', 'max-autotune'], help="torch.compile模式")
 
 if __name__ == "__main__":
     import argparse

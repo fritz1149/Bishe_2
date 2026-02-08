@@ -104,7 +104,7 @@ class ProposeModel(nn.Module, GenerationMixin):
                 result[name] = d[name]
         return result
 
-    def dispatch(self, device_map=None):
+    def dispatch(self, device_map=None, split_layers_num=25):
         self.device = torch.device('cuda:0')
         self.encoder = self.encoder.to('cuda:0')
         self.text_embedder = self.text_embedder.to('cuda:0')
@@ -115,8 +115,8 @@ class ProposeModel(nn.Module, GenerationMixin):
                 "base_model.model.model.visual": "cuda:0",
                 "base_model.model.lm_head": "cuda:1",
                 "base_model.model.model.language_model.norm": "cuda:1",
-                **{f"base_model.model.model.language_model.layers.{i}": "cuda:0" for i in range(0, 18)},
-                **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(18, 36)},
+                **{f"base_model.model.model.language_model.layers.{i}": "cuda:0" for i in range(0, split_layers_num)},
+                **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(split_layers_num, 36)},
             }
         from accelerate import dispatch_model
         self.backbone = dispatch_model(self.backbone, device_map=device_map)
