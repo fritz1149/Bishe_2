@@ -31,18 +31,17 @@ class ProposeModel(nn.Module, GenerationMixin):
         self.main_input_name = backbone.main_input_name
         self.device = None
         
-        if not args.test_mode:
-            from peft import LoraConfig, PeftMixedModel, TaskType
-            lora_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM,
-                r=16,
-                lora_alpha=32,
-                lora_dropout=0.05,
-                target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
-            )
-            backbone = PeftMixedModel(backbone, lora_config, adapter_name="0")
-            from .encoder import get_longformer_with_projector
-            self.encoder = get_longformer_with_projector(args)
+        from peft import LoraConfig, PeftMixedModel, TaskType
+        lora_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            r=16,
+            lora_alpha=32,
+            lora_dropout=0.05,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
+        )
+        backbone = PeftMixedModel(backbone, lora_config, adapter_name="0")
+        from .encoder import get_longformer_with_projector
+        self.encoder = get_longformer_with_projector(args)
         if args.align1_mode:
             self.backbone = backbone
             # # 冻结除lora参数以外的所有参数

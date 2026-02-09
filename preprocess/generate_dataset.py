@@ -1313,18 +1313,18 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
                    if os.path.isdir(os.path.join(preprocess_path, name))]
 
     # 准备prompt（和generate_finetuning_dataset一样的逻辑）
-    system_prompt = """<|im_start|>system
-你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|> """
-    prompt = system_prompt + f"""
-<|im_start|>user
-接下来会给出一个流量表格，包含若干个包的头部特征和统计特征，以及在最后一列的payload。请输出对应的类别。
-类别包含: {", ".join(label_names)}。
-接下来是表格：<表格开始>"""
-    prompt_ids = _str_to_ids(prompt, type="qwen3vl")[0]
-    prompt2 = """<表格结束><|im_end|>
-<|im_start|>assistant
-给定流的类别是："""
-    prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
+#     system_prompt = """<|im_start|>system
+# 你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|> """
+#     prompt = system_prompt + f"""
+# <|im_start|>user
+# 接下来会给出一个流量表格，包含若干个包的头部特征和统计特征，以及在最后一列的payload。请输出对应的类别。
+# 类别包含: {", ".join(label_names)}。
+# 接下来是表格：<表格开始>"""
+#     prompt_ids = _str_to_ids(prompt, type="qwen3vl")[0]
+#     prompt2 = """<表格结束><|im_end|>
+# <|im_start|>assistant
+# 给定流的类别是："""
+#     prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
     
     for label in label_names:
         label_ids = _str_to_ids(label+"<|im_end|>", type="qwen3vl")[0]

@@ -97,6 +97,8 @@ def train(args):
     # torch.compile 优化
     if args.compile:
         print(f"Compiling model with mode={args.compile_mode}...")
+        import torch._inductor.select_algorithm as _sa
+        _sa.TritonTemplate.all_templates = {}
         model.backbone = torch.compile(model.backbone, mode=args.compile_mode, dynamic=True)
         print("Model compiled.")
 
@@ -231,11 +233,6 @@ def eval(args, model = None):
         model.device = torch.device('cuda:0')
         model.encoder = model.encoder.to('cuda:0')
         model.text_embedder = model.text_embedder.to('cuda:0')
-        if args.test_mode:
-            new_device_map = {}
-            for k, v in device_map.items():
-                new_device_map[k[len("base_model.model."):]] = v
-            device_map = new_device_map
         model.dispatch(split_layers_num=args.split_layers_num)
         model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         model.backbone.enable_input_require_grads()
@@ -285,7 +282,7 @@ def eval(args, model = None):
     fp = 0  # False Positive: 预测正确但实际错误（在这个场景中，如果is_same==True，说明预测正确，所以fp=0）
     fn = 0  # False Negative: 预测错误但实际正确（在这个场景中，如果is_same==False，说明预测错误，所以fn=is_same==False的数量）
     
-    for step, (input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas) in enumerate(loader):
+    for step, (input_ids, labels_ids, payloads, position_ids, attention_mask, labels) in enumerate(loader):
         assert input_ids.shape[1] <= 4096
         first_not_minus_100 = (labels_ids[0] != -100).nonzero()[0].item()
         input_ids_ = input_ids[:, :first_not_minus_100]
@@ -296,7 +293,6 @@ def eval(args, model = None):
             attention_mask=attention_mask,
             position_ids=position_ids,
             payloads=payloads,
-            rope_deltas=rope_deltas,
             max_new_tokens=512,
             do_sample=False
         )
@@ -322,10 +318,6 @@ def eval(args, model = None):
         else:
             fn += 1
         # 显式删除变量以释放内存
-        del result, input_ids_, input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas
-        # 每10个样本清理一次缓存，防止内存累积
-        if (step + 1) % 10 == 0:
-            torch.cuda.empty_cache()
     
     # 计算指标
     if total_count > 0:
