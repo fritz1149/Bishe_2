@@ -46,8 +46,8 @@ class CustomDataset(Dataset):
             raise ValueError(f"数据路径不存在: {self.data_path}")
         
         # 加载 id2label.json（如存在）
-        self.id2label = self._load_id2label()
         self.samples = self._load_all_samples()
+        self.id2label = self._load_id2label()
     
     def _load_id2label(self):
         """加载 id2label.json（如存在）"""

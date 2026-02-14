@@ -233,9 +233,9 @@ def collate_LLMDataset(batch):
     assert position_ids.shape[1] == input_ids.shape[0]
     assert position_ids.shape[2] == max_seq_len and position_ids.shape[2] == input_ids.shape[1]
 
-    # rope_deltas = position_ids.max().item()+1-input_ids.shape[1] # [batch_size]
+    rope_deltas = position_ids.max().item()+1-input_ids.shape[1] # [batch_size]
         
-    return input_ids, labels_ids, payloads, position_ids, attention_mask, labels
+    return input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas
 
 
 def collate_LLMDataset_leftpadding(batch, keep_labels=False):

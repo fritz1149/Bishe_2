@@ -10,8 +10,6 @@ datasets/*
 datasets/finetuning/*
 !datasets/finetuning/5/
 datasets/finetuning/5/*
-!datasets/finetuning/5/App53->Time-400/
-!datasets/finetuning/5/App53->Version-400/
 !datasets/finetuning/5/App53-Time/
 !datasets/finetuning/5/App53-Version/
 uer/

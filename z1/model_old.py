@@ -11,11 +11,7 @@ from transformers.processing_utils import Unpack
 import sys
 
 def get_llm(args):
-    torch_dtype = getattr(args, 'torch_dtype', None)
-    model = Qwen3VLForConditionalGeneration.from_pretrained(
-        args.llm, trust_remote_code=True,
-        torch_dtype=torch_dtype
-    )
+    model = Qwen3VLForConditionalGeneration.from_pretrained(args.llm, trust_remote_code=True)
     # tokenizer = AutoTokenizer.from_pretrained(f"./{args.llm}")
     return model
 
@@ -31,17 +27,19 @@ class ProposeModel(nn.Module, GenerationMixin):
         self.main_input_name = backbone.main_input_name
         self.device = None
         
-        from peft import LoraConfig, PeftMixedModel, TaskType
-        lora_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=16,
-            lora_alpha=32,
-            lora_dropout=0.05,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
-        )
-        backbone = PeftMixedModel(backbone, lora_config, adapter_name="0")
-        from .encoder import get_longformer_with_projector
-        self.encoder = get_longformer_with_projector(args)
+        if not args.test_mode:
+            from peft import LoraConfig, PeftMixedModel, TaskType
+            lora_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=16,
+                lora_alpha=32,
+                lora_dropout=0.05,
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
+            )
+            backbone = PeftMixedModel(backbone, lora_config, adapter_name="0")
+        if args.align1_mode or args.align2_mode or args.finetune_mode or args.test_mode:
+            from encoder import get_longformer_with_projector
+            self.encoder = get_longformer_with_projector(args)
         if args.align1_mode:
             self.backbone = backbone
             # # 冻结除lora参数以外的所有参数
@@ -76,18 +74,9 @@ class ProposeModel(nn.Module, GenerationMixin):
             self.backbone = backbone
             for param in self.parameters(recurse=True):
                 param.requires_grad = False
-        elif args.eval_mode:
-            backbone.add_adapter("1", lora_config)
-            backbone.set_adapter(["0", "1"])
-            self.backbone = backbone
+        if args.eval_mode:
             for param in self.parameters(recurse=True):
                 param.requires_grad = False
-        if args.z2_mode:
-            self.backbone = backbone
-            label_num = len(args.labels)
-            self.label2id = {label: idx for idx, label in enumerate(sorted(args.labels))}
-            hidden_size = self.backbone.config.hidden_size
-            self.classifier = nn.Linear(hidden_size, label_num)
             # self.backbone.gradient_checkpointing_enable()
             # self.backbone.enable_input_require_grads()
         # for name, param in self.named_parameters(recurse=True):
@@ -110,101 +99,6 @@ class ProposeModel(nn.Module, GenerationMixin):
             if param.requires_grad:
                 result[name] = d[name]
         return result
-
-    def dispatch(self, device_map=None, split_layers_num=25):
-        self.device = torch.device('cuda:0')
-        self.encoder = self.encoder.to('cuda:0')
-        self.text_embedder = self.text_embedder.to('cuda:0')
-        if hasattr(self, 'classifier'):
-            self.classifier = self.classifier.to('cuda:1')
-        if device_map is None:
-            device_map = {
-                "base_model.model.model.language_model.embed_tokens": "cuda:0",
-                "base_model.model.model.language_model.rotary_emb": "cuda:0",
-                "base_model.model.model.visual": "cuda:0",
-                "base_model.model.lm_head": "cuda:1",
-                "base_model.model.model.language_model.norm": "cuda:1",
-                **{f"base_model.model.model.language_model.layers.{i}": "cuda:0" for i in range(0, split_layers_num)},
-                **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(split_layers_num, 36)},
-            }
-        from accelerate import dispatch_model
-        self.backbone = dispatch_model(self.backbone, device_map=device_map)
-
-    def resume(self, args):
-        def resume_training_status(args, ckpt):
-            if 'epoch' in ckpt:
-                args.start_epoch = ckpt['epoch']+1
-            # if 'optimizer' in ckpt:
-            #     args.optimizer.load_state_dict(ckpt['optimizer'])
-                # 否则忽略
-            if 'best_loss' in ckpt:
-                args.best_loss = ckpt['best_loss']
-            if 'best_acc' in ckpt:
-                args.best_acc = ckpt['best_acc']
-            if 'scaler' in ckpt:
-                args._scaler_state_dict = ckpt['scaler']
-            else:
-                args._scaler_state_dict = None
-
-        if getattr(args, "resume_encoder", None) and args.resume_encoder != "":
-            ckpt = torch.load(args.resume_encoder, map_location="cpu", weights_only=True)
-            # 仅加载 "encoder." 开头的权重
-            state_dict = ckpt["model"]
-            encoder_state_dict = {k[len("module.backbone.original_model."):]: v for k, v in state_dict.items() if k.startswith("module.backbone.original_model.")}
-            incompatible_keys = self.encoder.original_model.load_state_dict(encoder_state_dict, strict=False)
-            if getattr(args, "resume_log", False):
-                print("resume encoder")
-                for k in encoder_state_dict.keys():
-                    print("module.backbone.original_model. "+k)
-                print("Missing keys (模型有，但 checkpoint 没有):")
-                print(incompatible_keys.missing_keys)
-                print("\nUnexpected keys (checkpoint 有，但模型没有):")
-                print(incompatible_keys.unexpected_keys)
-        if getattr(args, "resume_linear", None) and args.resume_linear != "":
-            ckpt = torch.load(args.resume_linear, map_location="cpu", weights_only=True)
-            state_dict = ckpt["model"]
-            linear_state_dict = {k[len("encoder.fc."):]: v for k, v in state_dict.items() if k.startswith("encoder.fc.")}
-            incompatible_keys = self.encoder.fc.load_state_dict(linear_state_dict, strict=False)
-            if getattr(args, "align2_mode", False):
-                resume_training_status(args, ckpt)
-            if getattr(args, "resume_log", False):
-                print("resume linear")
-                for k in linear_state_dict.keys():
-                    print("encoder.fc. "+k)
-                print("Missing keys (模型有，但 checkpoint 没有):")
-                print(incompatible_keys.missing_keys)
-                print("\nUnexpected keys (checkpoint 有，但模型没有):")
-                print(incompatible_keys.unexpected_keys)
-        if getattr(args, "resume_lora0", None) and args.resume_lora0 != "":
-            ckpt = torch.load(args.resume_lora0, map_location="cpu", weights_only=True)
-            state_dict = ckpt["model"]
-            lora0_state_dict = {k[len("backbone.base_model.model.model.language_model.layers."):]: v for k, v in state_dict.items() if k.startswith("backbone.base_model.model.model.language_model.layers.")}
-            incompatible_keys = self.backbone.base_model.model.model.language_model.layers.load_state_dict(lora0_state_dict, strict=False)
-            if getattr(args, "align1_mode", False):
-                resume_training_status(args, ckpt)
-            if getattr(args, "resume_log", False):
-                print("resume lora0")
-                for k in lora0_state_dict.keys():
-                    print("backbone.base_model.model.model.language_model.layers. "+k)
-                print("Missing keys (模型有，但 checkpoint 没有):")
-                print(incompatible_keys.missing_keys)
-                print("\nUnexpected keys (checkpoint 有，但模型没有):")
-                print(incompatible_keys.unexpected_keys)
-        if getattr(args, "resume_lora1", None) and args.resume_lora1 != "":
-            ckpt = torch.load(args.resume_lora1, map_location="cpu", weights_only=True)
-            state_dict = ckpt["model"]
-            lora1_state_dict = {k[len("backbone.base_model.model.model.language_model.layers."):]: v for k, v in state_dict.items() if k.startswith("backbone.base_model.model.model.language_model.layers.")}
-            incompatible_keys = self.backbone.base_model.model.model.language_model.layers.load_state_dict(lora1_state_dict, strict=False)
-            if getattr(args, "finetune_mode", False):
-                resume_training_status(args, ckpt)
-            if getattr(args, "resume_log", False):
-                print("resume lora1")
-                for k in state_dict.keys():
-                    print(k)
-                print("Missing keys (模型有，但 checkpoint 没有):")
-                print(incompatible_keys.missing_keys)
-                print("\nUnexpected keys (checkpoint 有，但模型没有):")
-                print(incompatible_keys.unexpected_keys)
 
     def forward(
             self, 
@@ -245,7 +139,7 @@ class ProposeModel(nn.Module, GenerationMixin):
                 # print(payload_ids.shape)
                 # sys.stdout.flush()
                 payload_embeddings = self.encoder((payload_ids, attention_mask_payload, global_attention_mask_payload))
-                payload_embeddings = payload_embeddings.squeeze(1).to(dtype=inputs_embeds.dtype, device=text_device)
+                payload_embeddings = payload_embeddings.squeeze(1).to(text_device)
                 # print(payload_embeddings.shape)
                 input_payload_pos = input_ids[i] == IMAGE_PAD_ID
                 # print(input_ids[i].shape, input_payload_pos.shape, input_payload_pos.sum().item())
@@ -284,32 +178,6 @@ class ProposeModel(nn.Module, GenerationMixin):
             logits_to_keep=logits_to_keep,
             **kwargs
         )
-
-        if hasattr(self, "classifier"):
-            # Get the last non-padding token's hidden state for each batch
-            hidden_states = result.hidden_states  # (batch_size, seq_len, hidden_dim)
-            batch_size = hidden_states.shape[0]
-            
-            # Find the last non-padding position for each batch
-            last_hidden_states = []
-            for i in range(batch_size):
-                # Find positions that are not padding (assuming padding tokens have attention_mask == 0)
-                assert attention_mask is not None
-                non_pad_mask = attention_mask[i].bool()
-                last_non_pad_idx = non_pad_mask.sum() - 1
-                last_hidden_states.append(hidden_states[i, last_non_pad_idx])
-            
-            last_hidden_states = torch.stack(last_hidden_states, dim=0)  # (batch_size, hidden_dim)
-            classifier_logits = self.classifier(last_hidden_states)
-            result = {"logits": classifier_logits, "last_hidden_states": last_hidden_states}
-            
-            # Calculate classification loss if labels are provided in kwargs
-            if "classifier_labels" in kwargs:
-                classifier_labels = kwargs["classifier_labels"]
-                classifier_labels = [self.label2id[x] for x in classifier_labels]
-                classifier_loss = torch.nn.functional.cross_entropy(classifier_logits, classifier_labels)
-                result["loss"] = classifier_loss
-        
         return result
 
     def prepare_inputs_for_generation(
@@ -359,3 +227,4 @@ class ProposeModel(nn.Module, GenerationMixin):
     ) -> tuple[torch.LongTensor, dict[str, Any]]:
         assert expand_size == 1
         return input_ids, model_kwargs
+            

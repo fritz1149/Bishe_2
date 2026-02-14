@@ -3,4 +3,5 @@ models/alignment1/3mixed/300/** filter=lfs diff=lfs merge=lfs -text
 models/alignment2/3mixed/1800-500/** filter=lfs diff=lfs merge=lfs -text
 models/traffic_embedder/7500/** filter=lfs diff=lfs merge=lfs -text
 models/traffic_embedder/30000-2gpu/** filter=lfs diff=lfs merge=lfs -text
-datasets/finetuning/5/App53*/** filter=lfs diff=lfs merge=lfs -text
+datasets/finetuning/5/App53-Time/** filter=lfs diff=lfs merge=lfs -text
+datasets/finetuning/5/App53-Version/** filter=lfs diff=lfs merge=lfs -text
