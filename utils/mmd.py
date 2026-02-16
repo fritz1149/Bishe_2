@@ -55,7 +55,6 @@ def _compute_mmd_loss(SS, TT, ST, n_s, n_t, weight_ss=None, weight_tt=None, weig
     
     return loss_ss + loss_tt - 2 * loss_st
 
-
 def MMD(batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     src_features = torch.cat([x[0] for x in batch_s], dim=0)
     tgt_features = torch.cat([x[0] for x in batch_t], dim=0)
@@ -68,7 +67,6 @@ def MMD(batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     TT = kernels[n_s:, n_s:]
     ST = kernels[:n_s, n_s:]
     return _compute_mmd_loss(SS, TT, ST, n_s, n_t, norm=True)
-
 
 def LMMD(weight_type, batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     src_features = torch.cat([x[0] for x in batch_s], dim=0)   # (N_s, D)
@@ -96,8 +94,10 @@ def LMMD(weight_type, batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=
     s_sum[s_sum == 0] = 100
     s_onehot = s_onehot / s_sum
 
-    t_pred_np = tgt_probs.cpu().data.max(1)[1].numpy()          # (N_t,) pseudo labels
-    t_np = tgt_probs.cpu().data.numpy()                         # (N_t, C)
+    # 转为 float32 以兼容 bf16（numpy 不支持 bf16）
+    tgt_probs_f32 = tgt_probs.float().cpu().data
+    t_pred_np = tgt_probs_f32.max(1)[1].numpy()                 # (N_t,) pseudo labels
+    t_np = tgt_probs_f32.numpy()                                # (N_t, C)
     t_sum = t_np.sum(axis=0, keepdims=True)
     t_sum[t_sum == 0] = 100
     t_np = t_np / t_sum

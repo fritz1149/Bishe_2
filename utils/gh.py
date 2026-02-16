@@ -7,7 +7,7 @@ def get_GH(type):
     return funcs[type]
 
 def add(grads1, grads2):
-    return [(g1 + g2 if g1 is not None and g2 is not None else None) for g1, g2 in zip(grads1, grads2)]
+    return grads1 + grads2
 
 def _flatten(grads):
     import torch

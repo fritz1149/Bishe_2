@@ -8,6 +8,7 @@ from transformers.generation import GenerationMixin
 from transformers.cache_utils import Cache
 from transformers.utils import TransformersKwargs
 from transformers.processing_utils import Unpack
+from types import SimpleNamespace
 import sys
 
 def get_llm(args):
@@ -86,10 +87,18 @@ class ProposeModel(nn.Module, GenerationMixin):
             self.backbone = backbone
             label_num = len(args.labels)
             self.label2id = {label: idx for idx, label in enumerate(sorted(args.labels))}
-            hidden_size = self.backbone.config.hidden_size
+            hidden_size = args.linear_output_dim
             self.classifier = nn.Linear(hidden_size, label_num)
-            # self.backbone.gradient_checkpointing_enable()
-            # self.backbone.enable_input_require_grads()
+            import torch.nn.init as init
+            init.normal_(self.classifier.weight, std=0.01)
+            init.zeros_(self.classifier.bias)
+            for param in self.classifier.parameters():
+                param.requires_grad = True
+            
+            # momentum k-encoder 支持
+            self.momentum_k = getattr(args, 'momentum_k', 0.0)
+            if self.momentum_k > 0:
+                self._init_k_encoder(args)
         # for name, param in self.named_parameters(recurse=True):
         #     if param.requires_grad:
         #         print(name)
@@ -98,8 +107,80 @@ class ProposeModel(nn.Module, GenerationMixin):
         # for name, param in self.named_parameters(recurse=True):
         #     print(name)
 
+    def _init_k_encoder(self, args):
+        """初始化 momentum k-encoder，仅保存可学习参数的副本（不创建完整模型副本）"""
+        # 保存可学习参数的副本，用于动量更新
+        # 格式: {param_name: param_data.clone()}
+        self.k_params = {}
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                self.k_params[name] = param.data.clone()
+    
+    @torch.no_grad()
+    def momentum_update_k_encoder(self):
+        """使用动量更新 k-encoder 的参数"""
+        if not hasattr(self, 'k_params'):
+            return
+        m = self.momentum_k
+        for name, param in self.named_parameters():
+            if param.requires_grad and name in self.k_params:
+                self.k_params[name] = self.k_params[name] * m + param.data * (1. - m)
+
+    @torch.no_grad()
+    def forward_k(self, input_ids, attention_mask, position_ids, payloads, classifier_labels=None):
+        """使用 k-encoder 进行前向传播，通过动态替换权重实现
+        
+        步骤：
+        1. 保存当前可学习参数
+        2. 加载 k-encoder 参数
+        3. 执行前向传播
+        4. 恢复原参数
+        """
+        if not hasattr(self, 'k_params'):
+            raise RuntimeError("k-encoder not initialized. Set momentum_k > 0 to enable.")
+        
+        # 1. 保存当前可学习参数
+        original_params = {}
+        for name, param in self.named_parameters():
+            if param.requires_grad and name in self.k_params:
+                original_params[name] = param.data.clone()
+        
+        # 2. 加载 k-encoder 参数
+        for name, param in self.named_parameters():
+            if param.requires_grad and name in self.k_params:
+                param.data.copy_(self.k_params[name])
+        
+        try:
+            # 3. 执行前向传播（复用主模型的 forward）
+            result = self.forward(
+                input_ids=input_ids,
+                labels=None,
+                payloads=payloads,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                classifier_labels=classifier_labels,
+                rope_deltas=None
+            )
+            
+            output = SimpleNamespace(
+                last_hidden_states=result.last_hidden_states.detach(),
+                logits=result.logits.detach() if result.logits is not None else None
+            )
+        except Exception as e:
+            print(f"Error in forward_k: {e}")
+            raise
+        finally:
+            # 4. 恢复原参数
+            for name, param in self.named_parameters():
+                if param.requires_grad and name in original_params:
+                    param.data.copy_(original_params[name])
+        
+        return output
+
     def parameters_(self, recurse: bool = True) -> Iterator[Parameter]:
         return [p for p in self.parameters(recurse=recurse) if p.requires_grad]
+    def named_parameters_names(self, recurse: bool = True) -> Iterator[str]:
+        return [name for name, p in self.named_parameters(recurse=recurse) if p.requires_grad]
     def state_dict_(self, args):
         d = self.state_dict()
         # 使用字典推导式创建新字典，只保留需要梯度的参数
@@ -111,7 +192,7 @@ class ProposeModel(nn.Module, GenerationMixin):
                 result[name] = d[name]
         return result
 
-    def dispatch(self, device_map=None, split_layers_num=25):
+    def dispatch(self, device_map=None, split_layers_num=25, single_gpu=False):
         self.device = torch.device('cuda:0')
         self.encoder = self.encoder.to('cuda:0')
         self.text_embedder = self.text_embedder.to('cuda:0')
@@ -128,7 +209,12 @@ class ProposeModel(nn.Module, GenerationMixin):
                 **{f"base_model.model.model.language_model.layers.{i}": "cuda:1" for i in range(split_layers_num, 36)},
             }
         from accelerate import dispatch_model
-        self.backbone = dispatch_model(self.backbone, device_map=device_map)
+        self.backbone = dispatch_model(
+            self.backbone, 
+            device_map=device_map, 
+            main_device="cuda:1" if hasattr(self, 'classifier') else "cpu",
+            skip_keys="hidden_states"  # 防止 hidden_states 被移动到输入设备
+        )
 
     def resume(self, args):
         def resume_training_status(args, ckpt):
@@ -218,6 +304,7 @@ class ProposeModel(nn.Module, GenerationMixin):
             payloads: Optional[List[Tuple]] = None,
             rope_deltas: Optional[torch.LongTensor] = None,
             logits_to_keep: Union[int, torch.Tensor] = 0,
+            classifier_labels: Optional[str] = None,
             **kwargs: Unpack[TransformersKwargs]
         ):
         IMAGE_PAD_ID = 151655
@@ -282,12 +369,14 @@ class ProposeModel(nn.Module, GenerationMixin):
             cache_position=cache_position,
             labels=labels,
             logits_to_keep=logits_to_keep,
+            return_hidden_states=True if hasattr(self, "classifier") else False,
             **kwargs
         )
 
         if hasattr(self, "classifier"):
             # Get the last non-padding token's hidden state for each batch
             hidden_states = result.hidden_states  # (batch_size, seq_len, hidden_dim)
+
             batch_size = hidden_states.shape[0]
             
             # Find the last non-padding position for each batch
@@ -301,15 +390,18 @@ class ProposeModel(nn.Module, GenerationMixin):
             
             last_hidden_states = torch.stack(last_hidden_states, dim=0)  # (batch_size, hidden_dim)
             classifier_logits = self.classifier(last_hidden_states)
-            result = {"logits": classifier_logits, "last_hidden_states": last_hidden_states}
+            result = SimpleNamespace(
+                logits=classifier_logits,
+                last_hidden_states=last_hidden_states,
+                loss=None
+            )
             
             # Calculate classification loss if labels are provided in kwargs
-            if "classifier_labels" in kwargs:
-                classifier_labels = kwargs["classifier_labels"]
-                classifier_labels = [self.label2id[x] for x in classifier_labels]
+            if classifier_labels is not None:
+                classifier_labels = torch.tensor([self.label2id[x] for x in classifier_labels], device=classifier_logits.device)
                 classifier_loss = torch.nn.functional.cross_entropy(classifier_logits, classifier_labels)
-                result["loss"] = classifier_loss
-        
+                result.loss = classifier_loss
+                        
         return result
 
     def prepare_inputs_for_generation(

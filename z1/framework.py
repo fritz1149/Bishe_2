@@ -73,6 +73,85 @@ def save_checkpoint(state, is_best, args, filename="checkpoint.pt"):
     # sys.stdout.flush()
     return
 
+class MemoryBank:
+    """Memory Bank 用于存储最近的源域和目标域样本特征"""
+    def __init__(self, queue_size: int, device: str = 'cuda:1'):
+        self.queue_size = queue_size
+        self.device = device
+        # 源域队列: list of (hidden_states, labels)
+        self.src_queue = []
+        # 目标域队列: list of (hidden_states, logits)
+        self.tgt_queue = []
+    
+    def update(self, src_samples: list, tgt_samples: list):
+        """更新队列，添加新样本（detach后），移除最旧的样本"""
+        # 添加新样本（detach以断开计算图）
+        for hidden, labels in src_samples:
+            self.src_queue.append((hidden.detach().to(self.device), labels.detach().to(self.device) if isinstance(labels, torch.Tensor) else labels))
+        for hidden, logits in tgt_samples:
+            self.tgt_queue.append((hidden.detach().to(self.device), logits.detach().to(self.device)))
+        
+        # 移除超出队列大小的旧样本
+        while len(self.src_queue) > self.queue_size:
+            self.src_queue.pop(0)
+        while len(self.tgt_queue) > self.queue_size:
+            self.tgt_queue.pop(0)
+    
+    def get_samples(self, current_src: list = None, current_tgt: list = None):
+        """获取用于MMD计算的样本，包括队列中的历史样本和当前样本"""
+        src_samples = list(self.src_queue)
+        tgt_samples = list(self.tgt_queue)
+        if current_src:
+            src_samples.extend(current_src)
+        if current_tgt:
+            tgt_samples.extend(current_tgt)
+        return src_samples, tgt_samples
+    
+    def __len__(self):
+        return len(self.src_queue)
+
+def get_grad(model):
+    g = []
+    none_count = 0
+    none_positions = []
+    for i, p in enumerate(model.parameters_()):
+        if p.grad is None:
+            none_count += 1
+            none_positions.append(i)
+            g.append(torch.zeros_like(p).view(-1).contiguous().to('cuda:1'))
+        else:
+            g.append(torch.as_tensor(p.grad).view(-1).contiguous().to('cuda:1'))
+    
+    if none_count != 0 and none_count != 2:
+        raise RuntimeError(f"Too many parameters with None gradient: {none_count}, positions: {none_positions}")
+    if none_count != 0 and set(none_positions) != {288, 289}:
+        raise RuntimeError(f"Parameters with None gradient at unexpected positions: {none_positions}, expected [288, 289]")
+    
+    return torch.cat(g, dim=0).detach()
+
+def to_grad_and_set(model, g):
+    """将 get_grad 输出的扁平化梯度向量还原为每个参数对应的梯度列表"""
+    grads = []
+    offset = 0
+    for p in model.parameters_():
+        numel = p.numel()
+        grad = g[offset:offset + numel].view(p.shape).to(p.device)
+        p.grad = grad
+        offset += numel
+    return
+
+def compute_and_fuse_grads(model, optimizer, dom_loss_fn, gh_fn, src_samples, tgt_samples, dom_loss_weight):
+    """计算 MMD loss 并与 CE loss 梯度融合，返回融合后的梯度"""
+    ce_grads = get_grad(model)
+    optimizer.zero_grad()
+    dom_loss_ = dom_loss_fn(src_samples, tgt_samples) * dom_loss_weight
+    dom_loss_.backward()
+    del dom_loss_
+    dom_loss_grads = get_grad(model)
+    optimizer.zero_grad()
+    gh_grads = gh_fn(ce_grads, dom_loss_grads)
+    return gh_grads
+
 # TODO: 调整优化器参数 & 添加scheduler & 并行训练
 def train(args):
     # init
@@ -88,7 +167,13 @@ def train(args):
     # load model
     from z1.model import ProposeModel
     model = ProposeModel(args)
-    print(model)
+    # print(model)
+    # for name in model.named_parameters_names(False):
+    #     print(name)
+    # for name in model.parameters_():
+    #     print(name)
+    # for name in model.parameters():
+    #     print(name)
     # return
     
     from dataset import CustomDataset, collate_LLMDataset
@@ -96,11 +181,12 @@ def train(args):
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=True,
                 num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
+    
     if args.z2_mode:
         dataset_t = CustomDataset(args.train_dir_t)
         loader_t = torch.utils.data.DataLoader(dataset_t, batch_size=args.per_device_batch_size_t, shuffle=True,
                     num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
-    model.dispatch(split_layers_num=args.split_layers_num)
+    model.dispatch(split_layers_num=args.split_layers_num, single_gpu=args.single_gpu)
 
     args.optimizer = torch.optim.AdamW(model.parameters_(), lr=args.base_lr, betas=(args.beta_0, args.beta_1), eps=args.eps, weight_decay=args.wd)
     # 混合精度 GradScaler
@@ -142,7 +228,7 @@ def train(args):
             )
         else:
             from transformers import get_cosine_with_min_lr_schedule_with_warmup
-            scheduler = get_cosine_schedule_with_warmup(
+            scheduler = get_cosine_with_min_lr_schedule_with_warmup(
                 args.optimizer,
                 num_warmup_steps=warmup_steps,
                 num_training_steps=total_steps,
@@ -160,6 +246,8 @@ def train(args):
             gh = lambda g1, g2: gh(g1, g2, lam=args.lambda_)
         from utils.mmd import get_MMD
         dom_loss = get_MMD(args.dom_loss, args.weight_type)
+        # 初始化 memory bank（如果启用）
+        memory_bank = MemoryBank(args.queue_size) if args.memory_bank else None
     # train
 
     last_logging = time.time()
@@ -175,16 +263,16 @@ def train(args):
         model.train()
         args.optimizer.zero_grad()
         if args.z2_mode:
-            #TODO：此处可能存在问题，因为不是每个参数都有梯度，部分参数的梯度可能是None
-            accum_ce_grads = [torch.zeros_like(p) for p in model.parameters()]
             accum_src_samples = []
             accum_tgt_samples = []
+            accum_grads = None
         train_iter = enumerate(zip(loader, loader_t), start=epoch*len(loader)) if args.z2_mode else enumerate(loader, start=epoch*len(loader))
         for step, batch_data in train_iter:
             if args.z2_mode:
                 src_batch, tgt_batch = batch_data
                 input_ids, labels_ids, payloads, position_ids, attention_mask, labels, _ = src_batch
                 input_ids_t, labels_ids_t, payloads_t, position_ids_t, attention_mask_t, labels_t, _ = tgt_batch
+                # print(f"Processing batch {step}: src_labels={labels}, tgt_labels={labels_t}")
             else:
                 input_ids, labels_ids, payloads, position_ids, attention_mask, labels, _ = batch_data
             try:
@@ -212,31 +300,64 @@ def train(args):
                         )
                 # backward
                 loss = result.loss / args.accumulation_steps
-                # 显式删除result以释放内存
-                del result
-                if not args.z2_mode:
-                    scaler.scale(loss).backward()
-                else:
-                    ce_grads = torch.autograd.grad(loss, model.parameters(), create_graph=True)
-                    for i, ce_grad in enumerate(ce_grads):
-                        accum_ce_grads[i] += ce_grad
                 losses.update(loss.item(), len(labels))
+                
+                # z2 模式处理
                 if args.z2_mode:
-                    accum_src_samples.append((result.last_hidden_states, [model.label2id[x] for x in labels]))
-                    accum_tgt_samples.append((result2.last_hidden_states, result2.logits))
+                    # 当前 batch 的样本
+                    src_labels = torch.tensor([model.label2id[x] for x in labels], device=result.last_hidden_states.device)
+                    current_src = (result.last_hidden_states, src_labels)
+                    current_tgt = (result2.last_hidden_states, result2.logits)
+                    
+                    # 累积样本用于 accumulation 模式
+                    if memory_bank is None:
+                        accum_src_samples.append(current_src)
+                        accum_tgt_samples.append(current_tgt)
+                        scaler.scale(loss).backward(retain_graph=True)
+                    # memory_bank 模式：每个 batch 计算 MMD
+                    else:
+                        mb_src, mb_tgt = memory_bank.get_samples([current_src], [current_tgt])
+                        scaler.scale(loss).backward(retain_graph=True)
+                        print(f"Memory bank size: src={len(mb_src)}, tgt={len(mb_tgt)}")
+                        
+                        if len(mb_src) > 1:
+                            grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mb_src, mb_tgt, args.dom_loss_weight)
+                            accum_grads = grads if accum_grads is None else accum_grads + grads
+                        # 更新 memory bank
+                        if args.momentum_k > 0:
+                            with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
+                                k_result = model.forward_k(input_ids, attention_mask, position_ids, payloads)
+                                k_result_t = model.forward_k(input_ids_t, attention_mask_t, position_ids_t, payloads_t)
+                            memory_bank.update([(k_result.last_hidden_states, src_labels)], [(k_result_t.last_hidden_states, k_result_t.logits)])
+                        else:
+                            memory_bank.update([(current_src[0].detach(), current_src[1].detach())], [(current_tgt[0].detach(), current_tgt[1].detach())])
+                    del result, result2
+                else:
+                    # 非 z2 模式
+                    del result
+                    scaler.scale(loss).backward()
                 del loss
-                if (step + 1) % args.accumulation_steps == 0:
+                
+                # accumulation step 处理
+                is_accum_step = (step + 1) % args.accumulation_steps == 0
+                if is_accum_step:
                     if args.z2_mode:
-                        dom_loss_ = dom_loss(accum_src_samples, accum_tgt_samples) * args.dom_loss_weight
-                        dom_loss_grads = torch.autograd.grad(dom_loss_, model.parameters(), create_graph=True)
-                        gh_grads = gh(accum_ce_grads, dom_loss_grads)
-                        for p, g in zip(model.parameters(), gh_grads):
-                            p.grad = g
-                        accum_ce_grads = [torch.zeros_like(p) for p in model.parameters()]
-                        accum_src_samples = []
-                        accum_tgt_samples = []
+                        # 无 memory_bank：在 accumulation step 计算 MMD
+                        if memory_bank is None:
+                            # 获取用于 MMD 的样本
+                            mmd_src, mmd_tgt = accum_src_samples, accum_tgt_samples
+                            accum_grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mmd_src, mmd_tgt, args.dom_loss_weight)
+                            # 清空累积样本
+                            del accum_src_samples, accum_tgt_samples
+                            accum_src_samples = []
+                            accum_tgt_samples = []
+
+                        to_grad_and_set(model, accum_grads)
+
                     scaler.step(args.optimizer)
                     scaler.update()
+                    # if args.z2_mode and args.momentum_k > 0:
+                    #     model.momentum_update_k_encoder()
                     if args.reduce_on_plateau:
                         decrease_losses = losses.avg - last_losses if last_losses is not None else 0
                         scheduler.step(decrease_losses)
@@ -473,13 +594,17 @@ def add_args(parser):
     #z2
     parser.add_argument('--gh', type=str, default='deactivated', choices=['gh', 'gh++', 'deactivated'], help="GH模式选择")
     parser.add_argument('--lambda_', type=float, default=0.5, help="GH++模式lambda")
-    parser.add_argument('--dom_loss', type=str, default='mmd', choices=['mmd', 'lmmd', 'elmmd'], help="域损失类型")
+    parser.add_argument('--dom_loss', type=str, default='mmd', choices=['mmd', 'lmmd'], help="域损失类型")
     parser.add_argument('--dom_loss_weight', type=float, default=1.0, help="域分类损失权重")
     parser.add_argument('--weight_type', type=str, default='softmax', choices=['a-softmax', 'average'], help="域损失类型")
+    # memory bank 相关参数
+    parser.add_argument('--memory_bank', action='store_true', default=False, help="是否启用memory bank模式")
+    parser.add_argument('--momentum_k', type=float, default=0.0, help="momentum k-encoder动量系数，0表示不使用k-encoder")
+    parser.add_argument('--queue_size', type=int, default=256, help="memory bank队列大小")
     #resume & dir
     parser.add_argument('--train_dir', type=str, default='/datasets/train/', help="训练数据目录")
     parser.add_argument('--train_dir_t', type=str, default='/datasets/train_t/', help="z2模式目标域训练数据目录")
-    parser.add_argument('--batch_size_t', type=int, default=2, help="z2模式目标域batch size")
+    parser.add_argument('--batch_size_t', type=int, default=1, help="z2模式目标域batch size")
     parser.add_argument('--test_dir', type=str, default='/datasets/test/', help="测试数据目录")
     parser.add_argument('--save_dir', type=str, default='./out/', help="模型保存目录")
     parser.add_argument('--log_freq', type=int, default=16, help="日志打印频率")
@@ -525,6 +650,9 @@ def add_args(parser):
     parser.add_argument('--amp_dtype', type=str, default='bf16', choices=['bf16', 'fp16'], help="混合精度数据类型(bf16或fp16)")
     parser.add_argument('--tf32', action='store_true', default=False, help="启用TF32加速(仅Ampere及以上GPU)")
     parser.add_argument('--split_layers_num', type=int, default=25, help="split layers num")
+    parser.add_argument('--compile', action='store_true', default=False, help="启用torch.compile加速")
+    parser.add_argument('--compile_mode', type=str, default='reduce-overhead', choices=['default', 'reduce-overhead', 'max-autotune'], help="torch.compile模式")
+    parser.add_argument('--single_gpu', action='store_true', default=False, help="单显卡模式，所有模块放到cuda:0")
 
 if __name__ == "__main__":
     import argparse
