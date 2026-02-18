@@ -1408,7 +1408,8 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
 
     print(f"每个标签采样{str(k)}个流(txt文件)，已保存到: {dest_path}")
 
-def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", dest_path: str = "", packet_num_in_flow: int = 5):
+def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", dest_path: str = "", packet_num_in_flow: int = 5, 
+    kv_mode: bool = False, payload_flatten: bool = False, payload_flatten_prefix_len: int = None):
     """
     生成微调数据集。支持两种模式：
     1. catalog模式（catalog_path非空）：从catalog_path读取每个label的train.txt, val.txt, test.txt，
@@ -1422,8 +1423,10 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
         dest_path (str): 保存微调数据集的目的地目录
         packet_num_in_flow (int): 每个流包含的包数量
     """
+    assert not(kv_mode and payload_flatten), "kv_mode和payload_flatten不能同时开启"
+
     import os
-    from .utils import _dump_in_chunks, _LM_input, _str_to_ids
+    from .utils import _dump_in_chunks, _LM_input, _LM_input_kv, _str_to_ids
     from tqdm import tqdm
     import sys
     import gc
@@ -1492,10 +1495,40 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
                 lines = open(txt_filepath, "r", encoding="utf-8").readlines()
                 assert len(lines) >= 3, f"文件行数小于3: {txt_filepath}"
                 lines_used_here = packet_num_in_flow
-                sample = _LM_input(lines[:lines_used_here], None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                if kv_mode:
+                    sample = _LM_input_kv(lines[:lines_used_here], None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                else:
+                    sample = _LM_input(
+                        lines[:lines_used_here],
+                        None,
+                        None,
+                        label_ids,
+                        prompt_ids,
+                        prompt2_ids,
+                        label=label,
+                        extract_payloads_from_lines=True,
+                        biased_avoid=True,
+                        payload_flatten=payload_flatten,
+                        payload_flatten_prefix_len=payload_flatten_prefix_len,
+                    )
                 while sample["data"][-1].shape[1] > 4096 and lines_used_here > 0:
                     lines_used_here -= 1
-                    sample = _LM_input(lines[:lines_used_here], None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                    if kv_mode:
+                        sample = _LM_input_kv(lines[:lines_used_here], None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
+                    else:
+                        sample = _LM_input(
+                            lines[:lines_used_here],
+                            None,
+                            None,
+                            label_ids,
+                            prompt_ids,
+                            prompt2_ids,
+                            label=label,
+                            extract_payloads_from_lines=True,
+                            biased_avoid=True,
+                            payload_flatten=payload_flatten,
+                            payload_flatten_prefix_len=payload_flatten_prefix_len,
+                        )
                 assert sample["data"][-1].shape[1] <= 4096, f"样本长度大于4096: {txt_filepath}"
                 samples.append(sample)
             except Exception as e:

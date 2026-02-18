@@ -408,7 +408,7 @@ def train(args):
             if is_best: args.best_loss = losses.avg; args.best_acc = eval_acc
             state = dict(epoch=epoch, model=model.state_dict_(args), optimizer=args.optimizer.state_dict(), 
                 best_loss=args.best_loss, best_acc=args.best_acc, scaler=scaler.state_dict())
-            save_checkpoint(state, is_best, args)
+            save_checkpoint(state, is_best, args, filename=f"checkpoint-{epoch}.pt")
             lr = [param_group['lr'] for param_group in args.optimizer.param_groups]
             logs = dict(epoch=epoch, loss=losses.avg, best_loss=args.best_loss, best_acc=args.best_acc, eval_acc=eval_acc, lr=lr)
             print(json.dumps(logs))
@@ -480,7 +480,6 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
     dataset = CustomDataset(args.test_dir)
     amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
     if calculate_loss:
-        print("calculate_loss")
         loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=False,
                     num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
         sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
@@ -672,7 +671,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.eval_mode or args.test_mode:
-        print("eval_mode")
         eval(args, None, False, False)
     elif args.finetune_mode or args.align1_mode or args.align2_mode:
         train(args)

@@ -375,13 +375,15 @@ fields_ids = [_str_to_ids(f"<{field}>", None, "qwen3vl", False, False)[0] for fi
 payload_ids = _str_to_ids("<payload>", None, "qwen3vl", False, False)[0]
 tcp_payload_ids = _str_to_ids("<tcp.payload>", None, "qwen3vl", False, False)[0]
 udp_payload_ids = _str_to_ids("<udp.payload>", None, "qwen3vl", False, False)[0]
-def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, shuffle_columns: bool = False, random_drop_columns: bool = False, biased_avoid:bool = False, token_type: str = "qwen3vl", payload_token_type: str = "bert"):
+def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, shuffle_columns: bool = False, random_drop_columns: bool = False, biased_avoid:bool = False, token_type: str = "qwen3vl", payload_token_type: str = "bert", payload_flatten: bool = False, payload_flatten_prefix_len: int | None = None):
     """
     构建表格数据
     
     Args:
         token_type: 用于表格字段和标记的tokenizer类型，默认为 "qwen3vl"
         payload_token_type: 用于payload内容的tokenizer类型，如果为None则使用token_type，默认为None
+        payload_flatten: 是否将payload内容直接平铺进表格单元格（不再使用占位符 + payload_bert_ids）
+        payload_flatten_prefix_len: payload_flatten 启用时可选，仅取payload前缀指定长度
     """
     
     # 根据token_type动态生成字段IDs
@@ -468,21 +470,131 @@ def _build_table(lines, payloads, flow_type, extract_payloads_from_lines: bool =
     # print(f"payloads is None: {payloads is None}, payloads: {payloads}")
     payload_bert_ids = []
     if payloads is not None:
-        import torch
         table_columnwise.append([payload_ids_])
         for payload in payloads:
             if len(payload) == 0:
                 table_columnwise[-1].append(_str_to_ids(f"<>", type=token_type)[0])
             else:
-                table_columnwise[-1].append(_str_to_ids(f"<<|image_pad|>>", type=token_type)[0])
+                if payload_flatten:
+                    payload_flatten_text = payload if payload_flatten_prefix_len is None else payload[:payload_flatten_prefix_len]
+                    payload_flatten_text = f"<{payload_flatten_text}>"
+                    table_columnwise[-1].append(_str_to_ids(payload_flatten_text, type=token_type)[0])
+                else:
+                    table_columnwise[-1].append(_str_to_ids(f"<<|image_pad|>>", type=token_type)[0])
 
-                payload_ids, valid_len = _str_to_ids(payload, 1500, payload_token_type, True, True)
-                attention_mask_payload = [1]*valid_len+[0]*(1500-valid_len)
-                global_attention_mask_payload = [0]*1500
-                global_attention_mask_payload[0] = 1
-                payload_bert_ids.append((payload_ids, attention_mask_payload, global_attention_mask_payload))
-            
+                    payload_ids, valid_len = _str_to_ids(payload, 1500, payload_token_type, True, True)
+                    attention_mask_payload = [1]*valid_len+[0]*(1500-valid_len)
+                    global_attention_mask_payload = [0]*1500
+                    global_attention_mask_payload[0] = 1
+                    payload_bert_ids.append((payload_ids, attention_mask_payload, global_attention_mask_payload))
+
     return table_columnwise, payload_bert_ids
+
+def _build_kv_flow(lines, payloads, flow_type, extract_payloads_from_lines: bool = False, biased_avoid: bool = False, token_type: str = "qwen3vl", payload_token_type: str = "bert", payload_placeholder: str = "<tool_call>", payload_max_len: int = 1500, 
+    packet_separator: str = "<pck>"):
+    """构建非表格流量表征 + payload 压缩表征。
+
+    traffic 部分：每个packet生成 ", " 连接的 "key: value" 文本（不使用 <> 包裹）。
+    payload 部分：在 ids 中使用 payload_placeholder（不额外用 << >> 包裹），并生成 bert 输入。
+    """
+    assert extract_payloads_from_lines == True
+    payload_ids_ = None
+    if extract_payloads_from_lines:
+        payloads = []
+    if flow_type is None:
+        value0 = lines[0].split("\t")
+        if value0[tcp_payload_index] != "":
+            flow_type = "TCP"
+        elif value0[udp_payload_index] != "":
+            flow_type = "UDP"
+        else:
+            raise ValueError(f"Unknown protocol type: {flow_type}")
+    if flow_type == "TCP":
+        payload_name_ = _str_to_ids("tcp.payload", None, token_type, False, False)[0]
+        valid_indexes = tcp_field_indexes if not biased_avoid else tcp_biased_avoid_field_indexes
+        payload_index = tcp_payload_index
+        src_port_index = tcp_srcport_index
+        dst_port_index = tcp_dstport_index
+    elif flow_type == "UDP":
+        payload_name_ = _str_to_ids("udp.payload", None, token_type, False, False)[0]
+        valid_indexes = udp_field_indexes if not biased_avoid else udp_biased_avoid_field_indexes
+        payload_index = udp_payload_index
+        src_port_index = udp_srcport_index
+        dst_port_index = udp_dstport_index
+    else:
+        raise ValueError(f"Unknown protocol type: {flow_type}")
+
+    payload_bert_ids: list[tuple[list[int], list[int], list[int]]] = []
+
+    if biased_avoid:
+        ip_dict = {}
+        port_dict = {}
+
+    for line_idx, line in enumerate(lines):
+        values = line.split("\t")
+        if biased_avoid:
+            ip_src = values[src_index]
+            port_src = values[src_port_index]
+            ip_dst = values[dst_index]
+            port_dst = values[dst_port_index]
+            ip_version = values[ip_version_index]
+            ip_src_mask = ip_dict.get(ip_src, None)
+            ip_dst_mask = ip_dict.get(ip_dst, None)
+            port_src_mask = port_dict.get(port_src, None)
+            port_dst_mask = port_dict.get(port_dst, None)
+            if port_src_mask is None:
+                port_src_mask = random_field(16)
+                port_dict[port_src] = port_src_mask
+            if port_dst_mask is None:
+                port_dst_mask = random_field(16)
+                port_dict[port_dst] = port_dst_mask
+            if ip_src_mask is None:
+                ip_src_mask = _random_normal_ip(ip_version, ip_dst_mask)
+                ip_dict[ip_src] = ip_src_mask
+            if ip_dst_mask is None:
+                ip_dst_mask = _random_normal_ip(ip_version, ip_src_mask)
+                ip_dict[ip_dst] = ip_dst_mask
+            values[src_index] = ip_src_mask
+            values[dst_index] = ip_dst_mask
+            values[src_port_index] = port_src_mask
+            values[dst_port_index] = port_dst_mask
+
+        payload_from_line = values[payload_index]
+        if extract_payloads_from_lines:
+            payloads.append(payload_from_line)
+
+        parts = []
+        for i in valid_indexes:
+            key = fields[i]
+            val = values[i]
+            parts.append(f"{key}: {val}")
+        traffic_text = ", ".join(parts)
+        if payloads is None:
+            payload_text = ""
+        else:
+            payload_text = payloads[line_idx] if line_idx < len(payloads) else ""
+
+        if len(payload_text) == 0:
+            packet_text = f"{traffic_text}, {payload_name_}: 空"
+        else:
+            packet_text = f"{traffic_text}, {payload_name_}: {payload_placeholder}"
+
+            payload_ids, valid_len = _str_to_ids(payload_text, payload_max_len, payload_token_type, True, True)
+            attention_mask_payload = [1] * valid_len + [0] * (payload_max_len - valid_len)
+            global_attention_mask_payload = [0] * payload_max_len
+            global_attention_mask_payload[0] = 1
+            payload_bert_ids.append((payload_ids, attention_mask_payload, global_attention_mask_payload))
+
+        packet_texts.append(packet_text)
+
+    flow_text = packet_separator.join(packet_texts)
+    flow_ids = _str_to_ids(flow_text, None, token_type, False, False)[0]
+    return flow_ids, payload_bert_ids
+
+def _position_ids_flat(seq_len: int):
+    import torch
+    pos = torch.arange(seq_len).unsqueeze(0).expand(3, -1)
+    return pos
 
 def _position_ids(prompt_ids, prompt2_ids, table, label_ids):
     import torch
@@ -521,7 +633,7 @@ def _flat_table(table):
     return [item for column in table for cell in column for item in cell]
 
 def _LM_input(lines, payloads, flow_type, label_ids, prompt_ids, prompt2_ids, label = None, extract_payloads_from_lines=False, shuffle_columns=False, random_drop_columns=False, biased_avoid=False,
-    _build_table_result=None, token_type: str = "qwen3vl", payload_token_type: str = "bert"):
+    _build_table_result=None, token_type: str = "qwen3vl", payload_token_type: str = "bert", payload_flatten: bool = False, payload_flatten_prefix_len: int | None = None):
     """
     生成语言模型输入样本
     
@@ -530,7 +642,19 @@ def _LM_input(lines, payloads, flow_type, label_ids, prompt_ids, prompt2_ids, la
         payload_token_type: 用于payload内容的tokenizer类型，如果为None则使用token_type，默认为None
     """
     if _build_table_result is None:
-        table, payload_bert_ids = _build_table(lines, payloads, flow_type, extract_payloads_from_lines, shuffle_columns, random_drop_columns, biased_avoid, token_type=token_type, payload_token_type=payload_token_type)
+        table, payload_bert_ids = _build_table(
+            lines,
+            payloads,
+            flow_type,
+            extract_payloads_from_lines,
+            shuffle_columns,
+            random_drop_columns,
+            biased_avoid,
+            token_type=token_type,
+            payload_token_type=payload_token_type,
+            payload_flatten=payload_flatten,
+            payload_flatten_prefix_len=payload_flatten_prefix_len,
+        )
     else:
         table, payload_bert_ids = _build_table_result
     position_ids = _position_ids(prompt_ids, prompt2_ids, table, label_ids)
@@ -539,6 +663,32 @@ def _LM_input(lines, payloads, flow_type, label_ids, prompt_ids, prompt2_ids, la
     sample = {
         "data": (prompt_ids+table_ids+prompt2_ids, label_ids, payload_bert_ids, position_ids),
         "label": label
+    }
+    return sample
+
+def _LM_input_kv(lines, payloads, flow_type, label_ids, prompt_ids, prompt2_ids, label=None, extract_payloads_from_lines: bool = True, biased_avoid: bool = False,
+    token_type: str = "qwen3vl", payload_token_type: str = "bert", payload_placeholder: str = "<|image_pad|>", payload_max_len: int = 1500):
+    """生成非表格流量表征 + payload 压缩表征的语言模型输入样本。
+
+    - traffic: ", " 连接的 "key: value" 文本。
+    - payload: ids 中使用 payload_placeholder，同时生成 bert 输入 (payload_bert_ids)。
+    """
+    flow_ids, payload_bert_ids = _build_kv_flow(
+        lines,
+        payloads,
+        flow_type,
+        extract_payloads_from_lines=extract_payloads_from_lines,
+        biased_avoid=biased_avoid,
+        token_type=token_type,
+        payload_token_type=payload_token_type,
+        payload_placeholder=payload_placeholder,
+        payload_max_len=payload_max_len,
+    )
+    seq_len = len(prompt_ids) + len(flow_ids) + len(prompt2_ids) + len(label_ids)
+    position_ids = _position_ids_flat(seq_len)
+    sample = {
+        "data": (prompt_ids + flow_ids + prompt2_ids, label_ids, payload_bert_ids, position_ids),
+        "label": label,
     }
     return sample
 
