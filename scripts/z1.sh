@@ -1,4 +1,4 @@
-source /work/miniconda3/etc/profile.d/conda.sh
+source /opt/anaconda3/etc/profile.d/conda.sh
 conda activate bishe
 # cd Bishe_2
 
@@ -28,6 +28,6 @@ python -m z1.framework \
     --llm="Qwen3-VL-8B-Instruct" \
     --nodistributed \
     --log_freq=20 \
-    --batch_size=1 \
-    --accumulation_steps=16 \
+    --batch_size=2 \
+    --accumulation_steps=8 \
     --epochs=10 
