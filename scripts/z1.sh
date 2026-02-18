@@ -12,9 +12,8 @@ LOG_FILE="logs/finetune/${dataset_name}-$(date +%s).txt"
 # sudo ln -s /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/x86_64-linux-gnu/liblibc.a;
 # python --version;
 python -m z1.framework \
-    --finetune_mode \
-    --split_layers_num=26 \
-    --single_gpu \
+    --eval_mode \
+    --split_layers_num=20 \
     --amp \
     --amp_dtype=bf16 \
     --resume_encoder=models/encoder/90000/best_checkpoint.pt \

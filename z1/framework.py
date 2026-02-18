@@ -480,6 +480,7 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
     dataset = CustomDataset(args.test_dir)
     amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
     if calculate_loss:
+        print("calculate_loss")
         loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=False,
                     num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
         sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
@@ -537,12 +538,21 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False,
                 num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
 
+    try:
+        total_steps = len(loader)
+    except TypeError:
+        total_steps = None
+
     all_preds = []
     all_gts = []
     unknown_count = 0
 
     with torch.no_grad():
         for step, (input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas) in enumerate(loader):
+            if total_steps is None:
+                progress = f"[{step + 1}]"
+            else:
+                progress = f"[{step + 1}/{total_steps}]"
             assert input_ids.shape[1] <= 4096
             first_not_minus_100 = (labels_ids[0] != -100).nonzero()[0].item()
             input_ids_ = input_ids[:, :first_not_minus_100]
@@ -560,14 +570,14 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
                     do_sample=False
                 )
             result = result.to('cpu')
-            gt_text = _ids_to_str(input_ids[0][first_not_minus_100:], type="qwen3vl").strip()
-            pred_text = _ids_to_str(result[0][first_not_minus_100:], type="qwen3vl").strip()
+            gt_text = _ids_to_str(input_ids[0][first_not_minus_100:], type="qwen3vl").strip().removesuffix('<|im_end|>')
+            pred_text = _ids_to_str(result[0][first_not_minus_100:], type="qwen3vl").strip().removesuffix('<|im_end|>')
             pred_label = pred_text if pred_text in known_labels else UNKNOWN_LABEL
-            print("label:", gt_text)
+            print(progress, "label:", gt_text)
             gt_label = gt_text
 
-            print(f"GT: '{gt_label}', Pred: '{pred_text}' -> '{pred_label}', Match: {gt_label == pred_label}")
-            print("==========================================================")
+            print(progress, f"GT: '{gt_label}', Pred: '{pred_text}' -> '{pred_label}', Match: {gt_label == pred_label}")
+            print(progress, "==========================================================")
             sys.stdout.flush()
 
             all_gts.append(gt_label)
@@ -662,7 +672,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.eval_mode or args.test_mode:
-        eval(args, None)
+        print("eval_mode")
+        eval(args, None, False, False)
     elif args.finetune_mode or args.align1_mode or args.align2_mode:
         train(args)
     else:
