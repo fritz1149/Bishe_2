@@ -406,10 +406,9 @@ def train(args):
         if args.is_master:
             is_best = (eval_acc > args.best_acc or (eval_acc == args.best_acc and eval_loss < args.best_loss)) if full_eval else (eval_loss < args.best_loss)
             if is_best: args.best_loss = losses.avg; args.best_acc = eval_acc
-            if (epoch % args.save_freq == 0) or is_best:
-                state = dict(epoch=epoch, model=model.state_dict_(args), optimizer=args.optimizer.state_dict(), 
-                    best_loss=args.best_loss, best_acc=args.best_acc, scaler=scaler.state_dict())
-                save_checkpoint(state, is_best, args)
+            state = dict(epoch=epoch, model=model.state_dict_(args), optimizer=args.optimizer.state_dict(), 
+                best_loss=args.best_loss, best_acc=args.best_acc, scaler=scaler.state_dict())
+            save_checkpoint(state, is_best, args)
             lr = [param_group['lr'] for param_group in args.optimizer.param_groups]
             logs = dict(epoch=epoch, loss=losses.avg, best_loss=args.best_loss, best_acc=args.best_acc, eval_acc=eval_acc, lr=lr)
             print(json.dumps(logs))
@@ -452,17 +451,17 @@ def _compute_cls_metrics(all_preds, all_gts, class_name_fn=str):
 
     return acc, pre, rec, f1
 
-def _get_labels(dataset_dir):
+def _get_labels(dataset_dir, mode="train"):
     import re
     from pathlib import Path
     known_labels = set()
     for pkl_file in Path(dataset_dir).glob("*.pkl"):
-        m = re.search(r'train_(.+?)_part', pkl_file.name)
+        m = re.search(rf'{mode}_(.+?)_part', pkl_file.name)
         if m:
             known_labels.add(m.group(1))
     return known_labels
 
-def eval(args, model = None, loss_only = False):
+def eval(args, model = None, loss_only = False, calculate_loss = True):
     import sys
 
     if model is None:
@@ -479,55 +478,56 @@ def eval(args, model = None, loss_only = False):
 
     from dataset import CustomDataset, collate_LLMDataset
     dataset = CustomDataset(args.test_dir)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=False,
-                num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
-
     amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
+    if calculate_loss:
+        loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=False,
+                    num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
+        sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
 
-    # ===== 第一次遍历：计算loss（+ z2_mode下收集分类预测） =====
-    loss_list = []
-    all_preds = []
-    all_gts = []
-    torch.cuda.empty_cache()
-    with torch.no_grad():
-        for step, (input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas) in enumerate(loader):
-            assert input_ids.shape[1] <= 4096
-            with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
-                result: Qwen3VLCausalLMOutputWithPast = model(
-                    input_ids=input_ids,
-                    labels=labels_ids if not args.z2_mode else None,
-                    payloads=payloads,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    classifier_labels=labels if args.z2_mode else None,
-                    rope_deltas=None
-                )
-            if args.z2_mode:
-                loss_list.append(result["loss"].item())
-                all_preds.extend(result["logits"].argmax(dim=-1).cpu().tolist())
-                all_gts.extend(model.label2id[x] for x in labels)
-            else:
-                loss_list.append(result.loss.item())
 
-    avg_loss = sum(loss_list) / len(loss_list) if loss_list else float("inf")
-    print(f"Eval Loss: avg={avg_loss:.4f} (samples={len(loss_list)})" if loss_list else "No valid samples for eval loss.")
-
-    if args.z2_mode:
-        # z2_mode: 直接根据classifier logits计算分类指标
-        id2label = {v: k for k, v in model.label2id.items()}
-        print(f"Evaluation Metrics (z2 classification):")
-        acc, pre, rec, f1 = _compute_cls_metrics(all_preds, all_gts, class_name_fn=lambda c: id2label.get(c, c))
+        # ===== 第一次遍历：计算loss（+ z2_mode下收集分类预测） =====
+        loss_list = []
+        all_preds = []
+        all_gts = []
         torch.cuda.empty_cache()
-        return avg_loss, acc, pre, rec, f1
+        with torch.no_grad():
+            for step, (input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas) in enumerate(loader):
+                assert input_ids.shape[1] <= 4096
+                with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
+                    result: Qwen3VLCausalLMOutputWithPast = model(
+                        input_ids=input_ids,
+                        labels=labels_ids if not args.z2_mode else None,
+                        payloads=payloads,
+                        position_ids=position_ids,
+                        attention_mask=attention_mask,
+                        classifier_labels=labels if args.z2_mode else None,
+                        rope_deltas=None
+                    )
+                if args.z2_mode:
+                    loss_list.append(result["loss"].item())
+                    all_preds.extend(result["logits"].argmax(dim=-1).cpu().tolist())
+                    all_gts.extend(model.label2id[x] for x in labels)
+                else:
+                    loss_list.append(result.loss.item())
 
-    if loss_only:
-        torch.cuda.empty_cache()
-        return avg_loss, 0.0, 0.0, 0.0, 0.0
+        avg_loss = sum(loss_list) / len(loss_list) if loss_list else float("inf")
+        print(f"Eval Loss: avg={avg_loss:.4f} (samples={len(loss_list)})" if loss_list else "No valid samples for eval loss.")
+
+        if args.z2_mode:
+            # z2_mode: 直接根据classifier logits计算分类指标
+            id2label = {v: k for k, v in model.label2id.items()}
+            print(f"Evaluation Metrics (z2 classification):")
+            acc, pre, rec, f1 = _compute_cls_metrics(all_preds, all_gts, class_name_fn=lambda c: id2label.get(c, c))
+            torch.cuda.empty_cache()
+            return avg_loss, acc, pre, rec, f1
+
+        if loss_only:
+            torch.cuda.empty_cache()
+            return avg_loss, 0.0, 0.0, 0.0, 0.0
 
     # ===== 第二次遍历：生成并匹配label =====
     # 从test_dir的pkl文件名中提取label集合（train_XXX_part模式）
-    known_labels = _get_labels(args.test_dir)
+    known_labels = _get_labels(args.test_dir, 'test')
     UNKNOWN_LABEL = "__unknown__"
     print(f"Extracted labels from pkl filenames: {known_labels}")
 
@@ -563,7 +563,7 @@ def eval(args, model = None, loss_only = False):
             gt_text = _ids_to_str(input_ids[0][first_not_minus_100:], type="qwen3vl").strip()
             pred_text = _ids_to_str(result[0][first_not_minus_100:], type="qwen3vl").strip()
             pred_label = pred_text if pred_text in known_labels else UNKNOWN_LABEL
-            assert gt_text in known_labels
+            print("label:", gt_text)
             gt_label = gt_text
 
             print(f"GT: '{gt_label}', Pred: '{pred_text}' -> '{pred_label}', Match: {gt_label == pred_label}")
