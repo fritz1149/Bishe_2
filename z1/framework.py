@@ -168,8 +168,8 @@ def train(args):
     from z1.model import ProposeModel
     model = ProposeModel(args)
     # print(model)
-    # for name in model.named_parameters_names(False):
-    #     print(name)
+    for name in model.named_parameters_names(True):
+        print(name)
     # for name in model.parameters_():
     #     print(name)
     # for name in model.parameters():
@@ -469,11 +469,10 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
         from z1.model import ProposeModel
         model = ProposeModel(args)
         model.dispatch(split_layers_num=args.split_layers_num)
-        model.backbone.gradient_checkpointing_enable()
-        model.backbone.enable_input_require_grads()
         model.resume(args)
-    model.backbone.gradient_checkpointing_disable()
-    model.backbone.disable_input_require_grads()
+    else:
+        model.backbone.gradient_checkpointing_disable()
+        model.backbone.disable_input_require_grads()
     model.eval()
 
     from dataset import CustomDataset, collate_LLMDataset
@@ -600,6 +599,7 @@ def add_args(parser):
     parser.add_argument('--eval_mode', action='store_true', default=False, help="是否评估")
     parser.add_argument('--test_mode', action='store_true', default=False, help="是否测试")
     parser.add_argument('--z2_mode', action='store_true', default=False, help="是否z2模式")
+    parser.add_argument('--wo_weight_mode', action='store_true', default=False)
     #z2
     parser.add_argument('--gh', type=str, default='deactivated', choices=['gh', 'gh++', 'deactivated'], help="GH模式选择")
     parser.add_argument('--lambda_', type=float, default=0.5, help="GH++模式lambda")

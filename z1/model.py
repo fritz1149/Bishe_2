@@ -65,13 +65,18 @@ class ProposeModel(nn.Module, GenerationMixin):
         elif args.finetune_mode:
             # 微调等其他模式，使用peft定义lora，并冻结除lora模块的其他参数
             backbone.add_adapter("1", lora_config)
-            backbone.set_adapter(["0", "1"])
+            if args.wo_weight_mode:
+                backbone.set_adapter(["1"])
+            else:
+                backbone.set_adapter(["0", "1"])
             self.backbone = backbone
             # # 冻结除lora参数以外的所有参数
             for name, param in self.named_parameters(recurse=True):
                 if "lora_A.1" not in name and "lora_B.1" not in name:
                     param.requires_grad = False
                 else:
+                    param.requires_grad = True
+                if args.wo_weight_mode and "encoder" in name:
                     param.requires_grad = True
         elif args.test_mode:
             self.backbone = backbone
