@@ -36,6 +36,16 @@ def init_distributed(args):
 
     return is_distributed()
 
+def set_seed(seed):
+    if seed is None:
+        return
+    import random
+    import numpy as np
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
 class AverageMeter:
     """Computes and stores the average and current value"""
     def __init__(self, name, fmt=':f'):
@@ -156,6 +166,10 @@ def compute_and_fuse_grads(model, optimizer, dom_loss_fn, gh_fn, src_samples, tg
 def train(args):
     # init
     init_distributed(args)
+    if args.seed is None:
+        import random
+        args.seed = random.randint(0, 2**31 - 1)
+    set_seed(args.seed)
     if args.tf32:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -167,7 +181,8 @@ def train(args):
     # load model
     from z1.model import ProposeModel
     model = ProposeModel(args)
-    # print(model)
+    print(model)
+    print(model.active_adapters)
     for name in model.named_parameters_names(True):
         print(name)
     # for name in model.parameters_():
@@ -180,7 +195,6 @@ def train(args):
     dataset = CustomDataset(args.train_dir)
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=True,
                 num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
     
     if args.z2_mode:
         dataset_t = CustomDataset(args.train_dir_t)
@@ -253,7 +267,6 @@ def train(args):
     last_logging = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         losses = AverageMeter("Loss", ":.4f")
-        if is_distributed(): sampler.set_epoch(epoch)
 
         # 每个epoch开始时清理缓存，减少内存碎片
         torch.cuda.empty_cache()
@@ -373,8 +386,13 @@ def train(args):
                 # OOM异常捕获和自动恢复
                 if args.is_master:
                     import sys
+                    import re
+                    error_msg = str(e)
+                    gpu_match = re.search(r'GPU (\d+) has a total capacity of', error_msg)
+                    gpu_id = gpu_match.group(1) if gpu_match else "unknown"
                     print(f"\n{'='*60}", file=sys.stderr)
                     print(f"OOM Error detected at Epoch {epoch}, Step {step}", file=sys.stderr)
+                    print(f"OOM occurred on GPU: {gpu_id}", file=sys.stderr)
                     print(f"Sequence length: {input_ids.shape[1]}", file=sys.stderr)
                     print(f"Batch size: {input_ids.shape[0]}", file=sys.stderr)
                     print(f"Skipping this batch and continuing training...", file=sys.stderr)
@@ -398,7 +416,7 @@ def train(args):
         
         # 在eval前清理缓存，释放训练过程中的内存
         torch.cuda.empty_cache()
-        full_eval = (args.epochs - epoch) <= args.full_eval_epochs
+        full_eval = (args.full_eval_epochs is not None and (args.epochs - epoch) <= args.full_eval_epochs) or (epoch+1) % args.eval_freq == 0
         eval_loss, eval_acc, pre, rec, f1 = eval(args, model, loss_only=not full_eval)
         # eval后清理缓存，释放eval过程中的内存
         torch.cuda.empty_cache()
@@ -481,7 +499,6 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
     if calculate_loss:
         loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=False,
                     num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
-        sampler = torch.utils.data.distributed.DistributedSampler(dataset) if is_distributed() else None
 
 
         # ===== 第一次遍历：计算loss（+ z2_mode下收集分类预测） =====
@@ -600,6 +617,7 @@ def add_args(parser):
     parser.add_argument('--test_mode', action='store_true', default=False, help="是否测试")
     parser.add_argument('--z2_mode', action='store_true', default=False, help="是否z2模式")
     parser.add_argument('--wo_weight_mode', action='store_true', default=False)
+    parser.add_argument('--tllm_mode', action='store_true', default=False)
     #z2
     parser.add_argument('--gh', type=str, default='deactivated', choices=['gh', 'gh++', 'deactivated'], help="GH模式选择")
     parser.add_argument('--lambda_', type=float, default=0.5, help="GH++模式lambda")
@@ -618,7 +636,8 @@ def add_args(parser):
     parser.add_argument('--save_dir', type=str, default='./out/', help="模型保存目录")
     parser.add_argument('--log_freq', type=int, default=16, help="日志打印频率")
     parser.add_argument('--save_freq', type=int, default=10, help="模型保存频率（每多少个epoch保存一次）")
-    parser.add_argument('--full_eval_epochs', type=int, default=3, help="最后多少个epoch进行完整eval（含generate推理），其余epoch仅计算eval loss")
+    parser.add_argument('--full_eval_epochs', type=int, default=None, help="最后多少个epoch进行完整eval（含generate推理），其余epoch仅计算eval loss")
+    parser.add_argument('--eval_freq', type=int, default=5, help="模型保存频率（每多少个epoch保存一次）")
     parser.add_argument('--resume_encoder', type=str, default="", help="是否从checkpoint恢复encoder")
     parser.add_argument('--resume_linear', type=str, default="", help="是否从checkpoint恢复linear层")
     parser.add_argument('--resume_lora0', type=str, default="", help="是否从checkpoint恢复lora0")

@@ -65,7 +65,7 @@ class ProposeModel(nn.Module, GenerationMixin):
         elif args.finetune_mode:
             # 微调等其他模式，使用peft定义lora，并冻结除lora模块的其他参数
             backbone.add_adapter("1", lora_config)
-            if args.wo_weight_mode:
+            if args.wo_weight_mode or args.tllm_mode:
                 backbone.set_adapter(["1"])
             else:
                 backbone.set_adapter(["0", "1"])
@@ -84,7 +84,10 @@ class ProposeModel(nn.Module, GenerationMixin):
                 param.requires_grad = False
         elif args.eval_mode:
             backbone.add_adapter("1", lora_config)
-            backbone.set_adapter(["0", "1"])
+            if args.wo_weight_mode or args.tllm_mode:
+                backbone.set_adapter(["1"])
+            else:
+                backbone.set_adapter(["0", "1"])
             self.backbone = backbone
             for param in self.parameters(recurse=True):
                 param.requires_grad = False
@@ -241,7 +244,10 @@ class ProposeModel(nn.Module, GenerationMixin):
             ckpt = torch.load(args.resume_encoder, map_location="cpu", weights_only=True)
             # 仅加载 "encoder." 开头的权重
             state_dict = ckpt["model"]
-            encoder_state_dict = {k[len("module.backbone.original_model."):]: v for k, v in state_dict.items() if k.startswith("module.backbone.original_model.")}
+            if not args.wo_weight_mode:
+                encoder_state_dict = {k[len("module.backbone.original_model."):]: v for k, v in state_dict.items() if k.startswith("module.backbone.original_model.")}
+            else:
+                encoder_state_dict = {k[len("encoder.origin_model."):]: v for k, v in state_dict.items() if k.startswith("encoder.origin_model.")}
             incompatible_keys = self.encoder.original_model.load_state_dict(encoder_state_dict, strict=False)
             if getattr(args, "resume_log", False):
                 print("resume encoder")
