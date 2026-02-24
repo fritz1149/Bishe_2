@@ -182,10 +182,10 @@ def train(args):
     from z1.model import ProposeModel
     model = ProposeModel(args)
     print(model)
-    print(model.backbone.active_adapters)
+    # print(model.backbone.active_adapters)
     for name in model.named_parameters_names(True):
         print(name)
-    return 
+    # return 
     # for name in model.parameters_():
     #     print(name)
     # for name in model.parameters():
@@ -639,7 +639,7 @@ def add_args(parser):
     parser.add_argument('--log_freq', type=int, default=16, help="日志打印频率")
     parser.add_argument('--save_freq', type=int, default=10, help="模型保存频率（每多少个epoch保存一次）")
     parser.add_argument('--full_eval_epochs', type=int, default=None, help="最后多少个epoch进行完整eval（含generate推理），其余epoch仅计算eval loss")
-    parser.add_argument('--eval_epochs', type=int, nargs='+', default=[5], help="评估频率（指定在哪些epoch进行评估）")
+    parser.add_argument('--eval_epochs', type=int, nargs='+', default=[], help="评估频率（指定在哪些epoch进行评估）")
     parser.add_argument('--resume_encoder', type=str, default="", help="是否从checkpoint恢复encoder")
     parser.add_argument('--resume_linear', type=str, default="", help="是否从checkpoint恢复linear层")
     parser.add_argument('--resume_lora0', type=str, default="", help="是否从checkpoint恢复lora0")

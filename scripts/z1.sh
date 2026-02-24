@@ -16,6 +16,8 @@ python -m z1.framework \
     --split_layers_num=20 \
     --amp \
     --amp_dtype=bf16 \
+    --stop_epochs=4 \
+    --eval_epochs=4 \
     --resume_encoder=models/encoder/90000/best_checkpoint.pt \
     --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
     --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \
