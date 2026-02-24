@@ -247,12 +247,12 @@ class ProposeModel(nn.Module, GenerationMixin):
             if not args.wo_weight_mode:
                 encoder_state_dict = {k[len("module.backbone.original_model."):]: v for k, v in state_dict.items() if k.startswith("module.backbone.original_model.")}
             else:
-                encoder_state_dict = {k[len("encoder.origin_model."):]: v for k, v in state_dict.items() if k.startswith("encoder.origin_model.")}
+                encoder_state_dict = {k[len("encoder.original_model."):]: v for k, v in state_dict.items() if k.startswith("encoder.original_model.")}
             incompatible_keys = self.encoder.original_model.load_state_dict(encoder_state_dict, strict=False)
             if getattr(args, "resume_log", False):
                 print("resume encoder")
                 for k in encoder_state_dict.keys():
-                    print("module.backbone.original_model. "+k)
+                    print("encoder.original_model. "+k)
                 print("Missing keys (模型有，但 checkpoint 没有):")
                 print(incompatible_keys.missing_keys)
                 print("\nUnexpected keys (checkpoint 有，但模型没有):")

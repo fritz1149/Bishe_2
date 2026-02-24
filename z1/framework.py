@@ -182,7 +182,7 @@ def train(args):
     from z1.model import ProposeModel
     model = ProposeModel(args)
     print(model)
-    print(model.active_adapters)
+    print(model.backbone.active_adapters)
     for name in model.named_parameters_names(True):
         print(name)
     # for name in model.parameters_():
@@ -265,7 +265,8 @@ def train(args):
     # train
 
     last_logging = time.time()
-    for epoch in range(args.start_epoch, args.epochs):
+    max_epochs = min(args.epochs, args.stop_epochs)
+    for epoch in range(args.start_epoch, max_epochs):
         losses = AverageMeter("Loss", ":.4f")
 
         # 每个epoch开始时清理缓存，减少内存碎片
@@ -416,7 +417,7 @@ def train(args):
         
         # 在eval前清理缓存，释放训练过程中的内存
         torch.cuda.empty_cache()
-        full_eval = (args.full_eval_epochs is not None and (args.epochs - epoch) <= args.full_eval_epochs) or (epoch+1) % args.eval_freq == 0
+        full_eval = (args.full_eval_epochs is not None and (args.epochs - epoch) <= args.full_eval_epochs) or (epoch+1) in eval_epochs
         eval_loss, eval_acc, pre, rec, f1 = eval(args, model, loss_only=not full_eval)
         # eval后清理缓存，释放eval过程中的内存
         torch.cuda.empty_cache()
@@ -637,7 +638,7 @@ def add_args(parser):
     parser.add_argument('--log_freq', type=int, default=16, help="日志打印频率")
     parser.add_argument('--save_freq', type=int, default=10, help="模型保存频率（每多少个epoch保存一次）")
     parser.add_argument('--full_eval_epochs', type=int, default=None, help="最后多少个epoch进行完整eval（含generate推理），其余epoch仅计算eval loss")
-    parser.add_argument('--eval_freq', type=int, default=5, help="模型保存频率（每多少个epoch保存一次）")
+    parser.add_argument('--eval_epochs', type=int, nargs='+', default=[5], help="评估频率（指定在哪些epoch进行评估）")
     parser.add_argument('--resume_encoder', type=str, default="", help="是否从checkpoint恢复encoder")
     parser.add_argument('--resume_linear', type=str, default="", help="是否从checkpoint恢复linear层")
     parser.add_argument('--resume_lora0', type=str, default="", help="是否从checkpoint恢复lora0")
@@ -647,6 +648,7 @@ def add_args(parser):
     #train
     parser.add_argument('--seed', type=int, default=None, help="随机种子")
     parser.add_argument('--epochs', type=int, default=10, help="训练轮数")
+    parser.add_argument('--stop_epochs', type=int, default=1000, help="训练轮数")
     parser.add_argument('--batch_size', type=int, default=2, help="总batch size（会被world_size整除）")
     parser.add_argument('--base_lr', type=float, default=2e-5, help="基础学习率")
     parser.add_argument('--beta_0', type=float, default=0.9, help="AdamW中的beta_0参数")
