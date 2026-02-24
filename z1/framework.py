@@ -185,6 +185,7 @@ def train(args):
     print(model.backbone.active_adapters)
     for name in model.named_parameters_names(True):
         print(name)
+    return 
     # for name in model.parameters_():
     #     print(name)
     # for name in model.parameters():

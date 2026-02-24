@@ -14,8 +14,11 @@ LOG_FILE="logs/finetune/${dataset_name}-$(date +%s).txt"
 python -m z1.framework \
     --finetune_mode \
     --split_layers_num=20 \
+    --base_lr=1e-4 \
+    --wo_weight_mode \
     --amp \
     --amp_dtype=bf16 \
+    --full_eval_epochs=1 \
     --resume_encoder=models/encoder/90000/best_checkpoint.pt \
     --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
     --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \
@@ -26,7 +29,7 @@ python -m z1.framework \
     --save_dir="models/finetuning/${dataset_name}-5" \
     --llm="Qwen3-VL-8B-Instruct" \
     --nodistributed \
-    --log_freq=20 \
+    --log_freq=16 \
     --batch_size=2 \
     --accumulation_steps=8 \
     --epochs=10 
