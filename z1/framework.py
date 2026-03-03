@@ -267,6 +267,11 @@ def train(args):
 
     last_logging = time.time()
     max_epochs = min(args.epochs, args.stop_epochs)
+    if args.z2_mode:
+        def _infinite_loader(dl):
+            while True:
+                yield from dl
+        loader_t_iter = _infinite_loader(loader_t)
     for epoch in range(args.start_epoch, max_epochs):
         losses = AverageMeter("Loss", ":.4f")
 
@@ -281,10 +286,11 @@ def train(args):
             accum_src_samples = []
             accum_tgt_samples = []
             accum_grads = None
-        train_iter = enumerate(zip(loader, loader_t), start=epoch*len(loader)) if args.z2_mode else enumerate(loader, start=epoch*len(loader))
+        train_iter = enumerate(loader, start=epoch*len(loader))
         for step, batch_data in train_iter:
             if args.z2_mode:
-                src_batch, tgt_batch = batch_data
+                src_batch = batch_data
+                tgt_batch = next(loader_t_iter)
                 input_ids, labels_ids, payloads, position_ids, attention_mask, labels, _ = src_batch
                 input_ids_t, labels_ids_t, payloads_t, position_ids_t, attention_mask_t, labels_t, _ = tgt_batch
                 # print(f"Processing batch {step}: src_labels={labels}, tgt_labels={labels_t}")
@@ -418,7 +424,7 @@ def train(args):
         
         # 在eval前清理缓存，释放训练过程中的内存
         torch.cuda.empty_cache()
-        full_eval = (args.full_eval_epochs is not None and (args.epochs - epoch) <= args.full_eval_epochs) or (epoch+1) in eval_epochs
+        full_eval = (args.full_eval_epochs is not None and (args.epochs - epoch) <= args.full_eval_epochs) or (epoch+1) in args.eval_epochs
         eval_loss, eval_acc, pre, rec, f1 = eval(args, model, loss_only=not full_eval)
         # eval后清理缓存，释放eval过程中的内存
         torch.cuda.empty_cache()
@@ -455,6 +461,7 @@ def _compute_cls_metrics(all_preds, all_gts, class_name_fn=str):
         f1_c = 2 * pre_c * rec_c / (pre_c + rec_c) if (pre_c + rec_c) > 0 else 0.0
         per_class[c] = (pre_c, rec_c, f1_c)
 
+    per_class = {k: v for k, v in per_class.items() if class_name_fn(k) != '__unknown__'}
     n = len(per_class)
     pre = sum(v[0] for v in per_class.values()) / n if n else 0.0
     rec = sum(v[1] for v in per_class.values()) / n if n else 0.0
@@ -684,6 +691,7 @@ def add_args(parser):
     parser.add_argument('--compile', action='store_true', default=False, help="启用torch.compile加速")
     parser.add_argument('--compile_mode', type=str, default='reduce-overhead', choices=['default', 'reduce-overhead', 'max-autotune'], help="torch.compile模式")
     parser.add_argument('--single_gpu', action='store_true', default=False, help="单显卡模式，所有模块放到cuda:0")
+    parser.add_argument('--flash_attn', action='store_true', default=False, help="启用Flash Attention 2加速")
 
 if __name__ == "__main__":
     import argparse

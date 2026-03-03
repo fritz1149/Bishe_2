@@ -10,13 +10,16 @@ def _process_pcap(pcap_path: str, tmp_path: str):
     if ret != 0:
         raise RuntimeError(f"tshark command failed with return code {ret}: {cmd}")
 
-def process_flow_dataset(src_path: str, dest_path: str, threads: int = 1):
+def process_flow_dataset(src_path: str, dest_path: str, threads: int = 1, catalog_path: str = None):
     """
     处理数据集，将src_path下的pcap文件转换为处理后的文件
     
     Args:
         src_path: 源路径，包含一级文件夹，一级文件夹下包含pcap文件
         dest_path: 目标路径，将创建相同的目录结构并输出处理后的文件
+        catalog_path: catalog目录路径，若提供则仅处理catalog中引用的pcap文件。
+                      catalog结构: catalog_path/label_name/{train,val,test}.txt，
+                      每行一个pcap名称，若含"/"则"/"前为src_path下的类目录，否则类目录与catalog中的label一致。
     """
     import os
     import shutil
@@ -27,19 +30,58 @@ def process_flow_dataset(src_path: str, dest_path: str, threads: int = 1):
     
     # 收集所有需要处理的pcap文件
     pcap_files = []
-    for item in os.listdir(src_path):
-        item_path = os.path.join(src_path, item)
-        if os.path.isdir(item_path):
-            dest_item_path = os.path.join(dest_path, item)
-            os.makedirs(dest_item_path, exist_ok=True)
-            
-            for file in os.listdir(item_path):
-                file_path = os.path.join(item_path, file)
-                if os.path.isfile(file_path) and file.lower().endswith('.pcap'):
-                    base_name = os.path.splitext(file)[0]
-                    output_file = base_name + '.txt'
-                    output_path = os.path.join(dest_item_path, output_file)
-                    pcap_files.append((file_path, output_path))
+
+    if catalog_path is not None and catalog_path.strip():
+        # catalog模式：从catalog中收集所有引用的pcap，去重后仅处理这些文件
+        seen = set()
+        catalog_labels = [name for name in os.listdir(catalog_path)
+                          if os.path.isdir(os.path.join(catalog_path, name))]
+        for catalog_label in catalog_labels:
+            catalog_label_dir = os.path.join(catalog_path, catalog_label)
+            for split_file in ["train.txt", "val.txt", "test.txt", "tgt.txt"]:
+                split_path = os.path.join(catalog_label_dir, split_file)
+                if not os.path.isfile(split_path):
+                    continue
+                with open(split_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        pcap_name = line.strip()
+                        if not pcap_name:
+                            continue
+                        # 确定源类目录和pcap文件名
+                        if "/" in pcap_name:
+                            src_label, pcap_filename = pcap_name.split("/", 1)
+                        else:
+                            src_label = catalog_label
+                            pcap_filename = pcap_name
+                        # 去重：以(src_label, pcap_filename)为键
+                        key = (src_label, pcap_filename)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        file_path = os.path.join(src_path, src_label, pcap_filename)
+                        if not os.path.isfile(file_path):
+                            continue
+                        dest_label_dir = os.path.join(dest_path, src_label)
+                        os.makedirs(dest_label_dir, exist_ok=True)
+                        base_name = os.path.splitext(pcap_filename)[0]
+                        output_file = base_name + '.txt'
+                        output_path = os.path.join(dest_label_dir, output_file)
+                        pcap_files.append((file_path, output_path))
+        print(f"catalog模式：从 {catalog_path} 收集到 {len(pcap_files)} 个待处理pcap文件")
+    else:
+        for item in os.listdir(src_path):
+            item_path = os.path.join(src_path, item)
+            if os.path.isdir(item_path):
+                dest_item_path = os.path.join(dest_path, item)
+                os.makedirs(dest_item_path, exist_ok=True)
+                
+                for file in os.listdir(item_path):
+                    file_path = os.path.join(item_path, file)
+                    if os.path.isfile(file_path) and file.lower().endswith('.pcap'):
+                        base_name = os.path.splitext(file)[0]
+                        output_file = base_name + '.txt'
+                        output_path = os.path.join(dest_item_path, output_file)
+                        pcap_files.append((file_path, output_path))
     
     # 使用tqdm显示进度
     import concurrent.futures

@@ -13,9 +13,11 @@ import sys
 
 def get_llm(args):
     torch_dtype = getattr(args, 'torch_dtype', None)
+    attn_implementation = "flash_attention_2" if getattr(args, 'flash_attn', False) else "eager"
     model = Qwen3VLForConditionalGeneration.from_pretrained(
         args.llm, trust_remote_code=True,
-        torch_dtype=torch_dtype
+        torch_dtype=torch_dtype,
+        attn_implementation=attn_implementation
     )
     # tokenizer = AutoTokenizer.from_pretrained(f"./{args.llm}")
     return model

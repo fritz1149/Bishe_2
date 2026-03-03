@@ -1285,7 +1285,8 @@ def generate_alignment_dataset_2(
         gc.collect()
     close_dbs(dbs)
 
-def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 500, few_shot_rate: float = 1.0):
+def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 500, few_shot_rate: float = 1.0, shift_prefix: str = None,
+    t_sample_rate: float = None):
     """
     从preprocess_path中对每个label读取k个文件，按照和generate_finetuning_dataset一样的逻辑生成原始pcap文件名称的记录。
     每个label的目录下生成三个txt文件（train.txt, val.txt, test.txt），比例为8:1:1。
@@ -1312,6 +1313,136 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
     label_names = [name for name in os.listdir(preprocess_path)
                    if os.path.isdir(os.path.join(preprocess_path, name))]
 
+    if shift_prefix is not None:
+        assert few_shot_rate == 1.0, "shift_prefix模式下few_shot_rate必须为1"
+
+        # 匹配label对：以shift_prefix开头的label与去掉prefix后同名的label配对
+        shifted_labels = [name for name in label_names if name.startswith(shift_prefix)]
+        pairs = []
+        for shifted_label in shifted_labels:
+            base_label = shifted_label[len(shift_prefix)+1:]
+            if base_label in label_names:
+                pairs.append((shifted_label, base_label))
+
+        if not pairs:
+            print(f"未找到任何shift_prefix='{shift_prefix}'的label配对")
+            return
+
+        print(f"找到 {len(pairs)} 对label配对: {pairs}")
+
+        # 辅助函数：从指定label目录收集pcap_names，pcapname格式为 label/原pcapname
+        def collect_pcap_names(label, max_count):
+            label_dir = os.path.join(preprocess_path, label)
+            if not os.path.isdir(label_dir):
+                return []
+            file_list = [f for f in os.listdir(label_dir) if f.endswith('.txt') or f.endswith('.pcap')]
+            if len(file_list) < 10:
+                return []
+            random.shuffle(file_list)
+            pcap_names = []
+            for filename in tqdm(file_list, desc=f"处理{label}文件", file=sys.stdout):
+                file_path = os.path.join(label_dir, filename)
+                if filename.endswith('.pcap'):
+                    from scapy.all import rdpcap
+                    try:
+                        packets = rdpcap(file_path)
+                        if len(packets) < 3:
+                            continue
+                    except:
+                        continue
+                else:
+                    lines = open(file_path, "r", encoding="utf-8").readlines()
+                    if len(lines) < 3:
+                        continue
+                base = filename.rsplit('.', 1)[0]
+                pcapname = label + "/" + base + ".pcap"
+                pcap_names.append(pcapname)
+                if len(pcap_names) >= max_count:
+                    break
+            return pcap_names
+
+        num_train = int(k * 0.8)
+        num_val = int(k * 0.1)
+        num_test = int(k * 0.1)
+
+        # 创建两个catalog的目标路径
+        dest_path_shift2orig = dest_path + shift_prefix + "2non"
+        dest_path_orig2shift = dest_path + "non2" + shift_prefix
+        os.makedirs(dest_path_shift2orig, exist_ok=True)
+        os.makedirs(dest_path_orig2shift, exist_ok=True)
+
+        for shifted_label, base_label in pairs:
+            # === shift_prefix版本 -> 非shift_prefix版本 ===
+            # 训练集从shifted_label目录选取，验证集和测试集从base_label目录选取
+            train_pcaps = collect_pcap_names(shifted_label, num_train)
+            valtest_pcaps = collect_pcap_names(base_label, num_val + num_test)
+            if t_sample_rate:
+                t_pcaps = collect_pcap_names(base_label, num_train)
+
+            if len(train_pcaps) < 8 or len(valtest_pcaps) < 2:
+                print(f"跳过 {shifted_label}->{base_label}，样本不足")
+            else:
+                random.shuffle(valtest_pcaps)
+                val_pcaps = valtest_pcaps[:len(valtest_pcaps)//2]
+                test_pcaps = valtest_pcaps[len(valtest_pcaps)//2:]
+
+                label_dest_dir = os.path.join(dest_path_shift2orig, shifted_label)
+                os.makedirs(label_dest_dir, exist_ok=True)
+
+                with open(os.path.join(label_dest_dir, "train.txt"), "w", encoding="utf-8") as f:
+                    for pcap_name in train_pcaps:
+                        f.write(pcap_name + "\n")
+                with open(os.path.join(label_dest_dir, "val.txt"), "w", encoding="utf-8") as f:
+                    for pcap_name in val_pcaps:
+                        f.write(pcap_name + "\n")
+                with open(os.path.join(label_dest_dir, "test.txt"), "w", encoding="utf-8") as f:
+                    for pcap_name in test_pcaps:
+                        f.write(pcap_name + "\n")
+                if t_sample_rate:
+                    with open(os.path.join(label_dest_dir, "tgt.txt"), "w", encoding="utf-8") as f:
+                        for pcap_name in t_pcaps:
+                            f.write(pcap_name + "\n")
+
+                print(f"[shift2orig] {shifted_label}: 训练集:{len(train_pcaps)}, 验证集:{len(val_pcaps)}, 测试集:{len(test_pcaps)}")
+
+            # === 非shift_prefix版本 -> shift_prefix版本 ===
+            # 训练集从base_label目录选取，验证集和测试集从shifted_label目录选取
+            train_pcaps2 = collect_pcap_names(base_label, num_train)
+            valtest_pcaps2 = collect_pcap_names(shifted_label, num_val + num_test)
+            if t_sample_rate:
+                t_pcaps2 = collect_pcap_names(shifted_label, num_train)
+
+            if len(train_pcaps2) < 8 or len(valtest_pcaps2) < 2:
+                print(f"跳过 {base_label}->{shifted_label}，样本不足")
+            else:
+                random.shuffle(valtest_pcaps2)
+                val_pcaps2 = valtest_pcaps2[:len(valtest_pcaps2)//2]
+                test_pcaps2 = valtest_pcaps2[len(valtest_pcaps2)//2:]
+
+                label_dest_dir2 = os.path.join(dest_path_orig2shift, base_label)
+                os.makedirs(label_dest_dir2, exist_ok=True)
+
+                with open(os.path.join(label_dest_dir2, "train.txt"), "w", encoding="utf-8") as f:
+                    for pcap_name in train_pcaps2:
+                        f.write(pcap_name + "\n")
+                with open(os.path.join(label_dest_dir2, "val.txt"), "w", encoding="utf-8") as f:
+                    for pcap_name in val_pcaps2:
+                        f.write(pcap_name + "\n")
+                with open(os.path.join(label_dest_dir2, "test.txt"), "w", encoding="utf-8") as f:
+                    for pcap_name in test_pcaps2:
+                        f.write(pcap_name + "\n")
+                if t_sample_rate:
+                    with open(os.path.join(label_dest_dir2, "tgt.txt"), "w", encoding="utf-8") as f:
+                        for pcap_name in t_pcaps2:
+                            f.write(pcap_name + "\n")
+
+                print(f"[orig2shift] {base_label}: 训练集:{len(train_pcaps2)}, 验证集:{len(val_pcaps2)}, 测试集:{len(test_pcaps2)}")
+
+            gc.collect()
+
+        print(f"shift_prefix模式完成，两个catalog已保存到:\n  {dest_path_shift2orig}\n  {dest_path_orig2shift}")
+        return
+
     # 准备prompt（和generate_finetuning_dataset一样的逻辑）
 #     system_prompt = """<|im_start|>system
 # 你是一个AI助手，擅长阅读表格形式的网络流量并对其进行思考和理解，并能够完成各种针对网络流量的问题。<|im_end|> """
@@ -1326,20 +1457,23 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
 # 给定流的类别是："""
 #     prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
     
-    for label in label_names:
-        label_ids = _str_to_ids(label+"<|im_end|>", type="qwen3vl")[0]
+    for label in tqdm(label_names, desc="处理标签", file=sys.stdout):
         label_dir = os.path.join(preprocess_path, label)
         if not os.path.isdir(label_dir):
+            print(f"⚠️ 标签目录不存在，跳过: {label_dir}")
             continue
         
         # 收集.txt文件
-        file_list = [f for f in os.listdir(label_dir) if f.endswith('.txt')]
+        file_list = [f for f in os.listdir(label_dir) if f.endswith('.txt') or f.endswith('.pcap')]
         if not file_list:
+            print(f"⚠️ 标签 {label} 下无txt或pcap文件，跳过")
             continue
         
         # 随机采样k*5个文件（和generate_finetuning_dataset一样的逻辑）
         if len(file_list) < 10:
+            print(f"⚠️ 标签 {label} 文件数少于10，跳过")
             continue
+        print(f"📂 标签 {label}: 共 {len(file_list)} 个txt或pcap文件")
         random.shuffle(file_list)
         sampled_files = file_list
         
@@ -1347,11 +1481,20 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
         pcap_names = []
         sample_num = 0
         
-        for filename in tqdm(sampled_files, desc=f"处理{label}文件", file=sys.stdout):
-            # 按照和generate_finetuning_dataset一样的逻辑检查文件
-            lines = open(os.path.join(label_dir, filename), "r", encoding="utf-8").readlines()
-            if len(lines) < 3:
-                continue
+        for filename in tqdm(sampled_files, desc=f"  处理 {label} 文件", file=sys.stdout, leave=False):
+            file_path = os.path.join(label_dir, filename)
+            if filename.endswith('.pcap'):
+                from scapy.all import rdpcap
+                try:
+                    packets = rdpcap(file_path)
+                    if len(packets) < 3:
+                        continue
+                except:
+                    continue
+            else:
+                lines = open(file_path, "r", encoding="utf-8").readlines()
+                if len(lines) < 3:
+                    continue
             # lines = lines[:packet_num_in_flow]
             # try:
             #     sample = _LM_input(lines, None, None, label_ids, prompt_ids, prompt2_ids, label=label, extract_payloads_from_lines=True, biased_avoid=True)
@@ -1370,7 +1513,9 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
                 break
 
         if len(pcap_names) < 10:
+            print(f"⚠️ 标签 {label} 有效pcap数少于10，跳过")
             continue
+        print(f"✅ 标签 {label}: 收集到 {len(pcap_names)} 个有效pcap")
         
         calc_start = min(len(pcap_names), k)
         k_this = int(calc_start * (0.2 + 0.8*few_shot_rate))
@@ -1600,7 +1745,10 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
                 txt_filepaths = []
                 for pcap_name in pcap_names:
                     txt_filename = pcap_name.rsplit('.', 1)[0] + ".txt"
-                    txt_filepath = os.path.join(label_dir, txt_filename)
+                    if "/" in txt_filename:
+                        txt_filepath = os.path.join(preprocess_path, txt_filename)
+                    else:
+                        txt_filepath = os.path.join(label_dir, txt_filename)
                     assert os.path.exists(txt_filepath), f"文件不存在: {txt_filepath}"
                     txt_filepaths.append(txt_filepath)
                 n = process_txt_files(txt_filepaths, label, label_ids, dataset_name)
