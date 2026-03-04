@@ -5,6 +5,8 @@ conda activate bishe
 dataset_names=(
     "AppUT-appnon2new"
 )
+CUDA_VISIBLE_DEVICES=${1:-0}
+export CUDA_VISIBLE_DEVICES
 
 for dataset_name in "${dataset_names[@]}"; do
     LOG_FILE="logs/finetune/${dataset_name}-$(date +%s)_$$.txt"
@@ -17,6 +19,7 @@ for dataset_name in "${dataset_names[@]}"; do
             --finetune_mode \
             --split_layers_num=20 \
             --single_gpu \
+            --classifier_mode \
             --amp \
             --amp_dtype=bf16 \
             --flash_attn \

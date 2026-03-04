@@ -96,7 +96,7 @@ class ProposeModel(nn.Module, GenerationMixin):
             self.backbone = backbone
             for param in self.parameters(recurse=True):
                 param.requires_grad = False
-        if args.z2_mode:
+        if args.z2_mode or args.classifier_mode:
             self.backbone = backbone
             label_num = len(args.labels)
             self.label2id = {label: idx for idx, label in enumerate(sorted(args.labels))}
@@ -404,10 +404,10 @@ class ProposeModel(nn.Module, GenerationMixin):
         if hasattr(self, "classifier"):
             # Get the last non-padding token's hidden state for each batch
             hidden_states = result.hidden_states  # (batch_size, seq_len, hidden_dim)
-
             batch_size = hidden_states.shape[0]
             
             # Find the last non-padding position for each batch
+            #TODO：不同样本的last_hidden_states长度不同导致进行mmd时可能出现的问题：并没有，因为用的是最后一个位置的states而非全部states
             last_hidden_states = []
             for i in range(batch_size):
                 # Find positions that are not padding (assuming padding tokens have attention_mask == 0)

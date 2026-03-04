@@ -6,6 +6,7 @@ import os
 import torch
 from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLCausalLMOutputWithPast
 from accelerate import load_checkpoint_and_dispatch, dispatch_model
+import math
 
 def is_distributed(): return False if not (dist.is_available and dist.is_initialized()) else True
 def get_rank(): return dist.get_rank() if is_distributed () else 0
@@ -124,36 +125,41 @@ def get_grad(model):
     g = []
     none_count = 0
     none_positions = []
-    #TODO：这里检查是否有关于None的实现问题
+    #TODO：这里检查是否有关于None的实现问题：感觉这样应该没问题，赋0是对的
     for i, p in enumerate(model.parameters_()):
         if p.grad is None:
             none_count += 1
             none_positions.append(i)
-            g.append(None)
+            g.append(torch.zeros(p.numel(), device=p.device, dtype=p.dtype))
         else:
-            g.append(torch.as_tensor(p.grad).view(-1).contiguous().to('cuda:1'))
-    
+            g.append(torch.as_tensor(p.grad).view(-1).contiguous().to(p.device))
+    # assert none_count == 0, f"Parameters with None gradient at positions: {none_positions}"
     if none_count != 0 and none_count != 2:
         raise RuntimeError(f"Too many parameters with None gradient: {none_count}, positions: {none_positions}")
     if none_count != 0 and set(none_positions) != {288, 289}:
         raise RuntimeError(f"Parameters with None gradient at unexpected positions: {none_positions}, expected [288, 289]")
-    
+
     return torch.cat(g, dim=0).detach()
 
 def to_grad_and_set(model, g):
     """将 get_grad 输出的扁平化梯度向量还原为每个参数对应的梯度列表"""
     offset = 0
-    #TODO：这里检查是否有关于None的实现问题
+    #TODO：这里检查是否有关于None的实现问题：赋0是对的
     for p in model.parameters_():
         numel = p.numel()
-        grad = g[offset:offset + numel].view(p.shape).to(p.device)
+        grad = g[offset:offset + numel].view(p.shape).to(device=p.device, dtype=p.dtype)
         p.grad = grad
         offset += numel
+    grad_norm = g.norm().item()
+    print(f"Gradient norm: {grad_norm:.6f}")
+    
     return
 
 def compute_and_fuse_grads(model, optimizer, dom_loss_fn, gh_fn, src_samples, tgt_samples, dom_loss_weight):
     """计算 MMD loss 并与 CE loss 梯度融合，返回融合后的梯度"""
     ce_grads = get_grad(model)
+    # print(f"g type: {type(ce_grads)}, dtype: {ce_grads.dtype}, shape: {ce_grads.shape}")
+
     optimizer.zero_grad()
     dom_loss_ = dom_loss_fn(src_samples, tgt_samples) * dom_loss_weight
     dom_loss_.backward()
@@ -184,8 +190,8 @@ def train(args):
     model = ProposeModel(args)
     print(model)
     # print(model.backbone.active_adapters)
-    for name in model.named_parameters_names(True):
-        print(name)
+    # for i, name in enumerate(model.named_parameters_names(True)):
+    #     print(i, name)
     # return 
     # for name in model.parameters_():
     #     print(name)
@@ -257,13 +263,16 @@ def train(args):
     # z2
     if args.z2_mode:
         from utils.gh import get_GH
-        gh = get_GH(args.gh)
+        gh_fn = get_GH(args.gh)
         if args.gh == "gh++":
-            gh = lambda g1, g2: gh(g1, g2, lam=args.lambda_)
+            gh = lambda g1, g2: gh_fn(g1, g2, args.lambda_)
+        else:
+            gh = gh_fn
         from utils.mmd import get_MMD
-        dom_loss = get_MMD(args.dom_loss, args.weight_type)
+        dom_loss = get_MMD(args.dom_loss)
         # 初始化 memory bank（如果启用）
-        memory_bank = MemoryBank(args.queue_size) if args.memory_bank else None
+        mb_device = 'cuda:0' if args.single_gpu else 'cuda:1'
+        memory_bank = MemoryBank(args.queue_size, device=mb_device) if args.memory_bank else None
     # train
 
     last_logging = time.time()
@@ -275,6 +284,8 @@ def train(args):
         loader_t_iter = _infinite_loader(loader_t)
     for epoch in range(args.start_epoch, max_epochs):
         losses = AverageMeter("Loss", ":.4f")
+        dom_loss_weight = dom_loss_weight if args.dom_loss_weight else 0.5*(2/(1+math.exp(-10*(epoch+1)/args.epochs))-1)
+        print(f"Epoch {epoch}: dom_loss_weight={dom_loss_weight:.6f}")
 
         # 每个epoch开始时清理缓存，减少内存碎片
         torch.cuda.empty_cache()
@@ -304,11 +315,11 @@ def train(args):
                 with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
                     result: Qwen3VLCausalLMOutputWithPast = model(
                         input_ids=input_ids,
-                        labels=labels_ids if not args.z2_mode else None,
+                        labels=labels_ids if not (args.z2_mode or args.classifier_mode) else None,
                         payloads=payloads,
                         position_ids=position_ids,
                         attention_mask=attention_mask,
-                        classifier_labels=labels if args.z2_mode else None,
+                        classifier_labels=labels if args.z2_mode or args.classifier_mode else None,
                         rope_deltas=None
                     )
                     if args.z2_mode:
@@ -341,10 +352,10 @@ def train(args):
                     else:
                         mb_src, mb_tgt = memory_bank.get_samples([current_src], [current_tgt])
                         scaler.scale(loss).backward(retain_graph=True)
-                        print(f"Memory bank size: src={len(mb_src)}, tgt={len(mb_tgt)}")
+                        # print(f"Memory bank size: src={len(mb_src)}, tgt={len(mb_tgt)}")
                         
                         if len(mb_src) > 1:
-                            grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mb_src, mb_tgt, args.dom_loss_weight)
+                            grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mb_src, mb_tgt, dom_loss_weight)
                             accum_grads = grads if accum_grads is None else accum_grads + grads
                         # 更新 memory bank
                         #TODO：探究是否两边的样本都用k_encoder生成比较好
@@ -370,7 +381,7 @@ def train(args):
                         if memory_bank is None:
                             # 获取用于 MMD 的样本
                             mmd_src, mmd_tgt = accum_src_samples, accum_tgt_samples
-                            accum_grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mmd_src, mmd_tgt, args.dom_loss_weight)
+                            accum_grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mmd_src, mmd_tgt, dom_loss_weight)
                             # 清空累积样本
                             del accum_src_samples, accum_tgt_samples
                             accum_src_samples = []
@@ -524,14 +535,14 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
                 with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
                     result: Qwen3VLCausalLMOutputWithPast = model(
                         input_ids=input_ids,
-                        labels=labels_ids if not args.z2_mode else None,
+                        labels=labels_ids if not (args.z2_mode or args.classifier_mode) else None,
                         payloads=payloads,
                         position_ids=position_ids,
                         attention_mask=attention_mask,
-                        classifier_labels=labels if args.z2_mode else None,
+                        classifier_labels=labels if args.z2_mode or args.classifier_mode else None,
                         rope_deltas=None
                     )
-                if args.z2_mode:
+                if args.z2_mode or args.classifier_mode:
                     loss_list.append(result["loss"].item())
                     all_preds.extend(result["logits"].argmax(dim=-1).cpu().tolist())
                     all_gts.extend(model.label2id[x] for x in labels)
@@ -541,7 +552,7 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
         avg_loss = sum(loss_list) / len(loss_list) if loss_list else float("inf")
         print(f"Eval Loss: avg={avg_loss:.4f} (samples={len(loss_list)})" if loss_list else "No valid samples for eval loss.")
 
-        if args.z2_mode:
+        if args.z2_mode or args.classifier_mode:
             # z2_mode: 直接根据classifier logits计算分类指标
             id2label = {v: k for k, v in model.label2id.items()}
             print(f"Evaluation Metrics (z2 classification):")
@@ -628,6 +639,7 @@ def add_args(parser):
     parser.add_argument('--eval_mode', action='store_true', default=False, help="是否评估")
     parser.add_argument('--test_mode', action='store_true', default=False, help="是否测试")
     parser.add_argument('--z2_mode', action='store_true', default=False, help="是否z2模式")
+    parser.add_argument('--classifier_mode', action='store_true', default=False, help="是否分类头模式")
     parser.add_argument('--wo_weight_mode', action='store_true', default=False)
     parser.add_argument('--tllm_mode', action='store_true', default=False)
     #z2
@@ -635,7 +647,7 @@ def add_args(parser):
     parser.add_argument('--lambda_', type=float, default=0.5, help="GH++模式lambda")
     parser.add_argument('--dom_loss', type=str, default='mmd', choices=['mmd', 'lmmd'], help="域损失类型")
     #TODO：这里的dom_loss_weight有待实现非固定版本
-    parser.add_argument('--dom_loss_weight', type=float, default=1.0, help="域分类损失权重")
+    parser.add_argument('--dom_loss_weight', type=float, default=None, help="域分类损失权重")
     # memory bank 相关参数
     parser.add_argument('--memory_bank', action='store_true', default=False, help="是否启用memory bank模式")
     parser.add_argument('--momentum_k', type=float, default=0.0, help="momentum k-encoder动量系数，0表示不使用k-encoder")
