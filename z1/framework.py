@@ -124,6 +124,7 @@ def get_grad(model):
     g = []
     none_count = 0
     none_positions = []
+    #TODO：这里检查是否有关于None的实现问题
     for i, p in enumerate(model.parameters_()):
         if p.grad is None:
             none_count += 1
@@ -141,8 +142,8 @@ def get_grad(model):
 
 def to_grad_and_set(model, g):
     """将 get_grad 输出的扁平化梯度向量还原为每个参数对应的梯度列表"""
-    grads = []
     offset = 0
+    #TODO：这里检查是否有关于None的实现问题
     for p in model.parameters_():
         numel = p.numel()
         grad = g[offset:offset + numel].view(p.shape).to(p.device)
@@ -283,8 +284,9 @@ def train(args):
         model.train()
         args.optimizer.zero_grad()
         if args.z2_mode:
-            accum_src_samples = []
-            accum_tgt_samples = []
+            if memory_bank is None:
+                accum_src_samples = []
+                accum_tgt_samples = []
             accum_grads = None
         train_iter = enumerate(loader, start=epoch*len(loader))
         for step, batch_data in train_iter:
@@ -632,8 +634,8 @@ def add_args(parser):
     parser.add_argument('--gh', type=str, default='deactivated', choices=['gh', 'gh++', 'deactivated'], help="GH模式选择")
     parser.add_argument('--lambda_', type=float, default=0.5, help="GH++模式lambda")
     parser.add_argument('--dom_loss', type=str, default='mmd', choices=['mmd', 'lmmd'], help="域损失类型")
+    #TODO：这里的dom_loss_weight有待实现非固定版本
     parser.add_argument('--dom_loss_weight', type=float, default=1.0, help="域分类损失权重")
-    parser.add_argument('--weight_type', type=str, default='softmax', choices=['a-softmax', 'average'], help="域损失类型")
     # memory bank 相关参数
     parser.add_argument('--memory_bank', action='store_true', default=False, help="是否启用memory bank模式")
     parser.add_argument('--momentum_k', type=float, default=0.0, help="momentum k-encoder动量系数，0表示不使用k-encoder")

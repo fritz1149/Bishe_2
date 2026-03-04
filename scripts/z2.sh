@@ -7,8 +7,7 @@ mkdir -p "$(dirname "$LOG_FILE")"
 exec > >(tee -a "$LOG_FILE") 2>&1
 trap 'rc=$?; echo "[EXIT] $(date -Is) inference finished, exit_code=$rc, log=$LOG_FILE"' EXIT
 
-dataset_name_s="App53-Time"
-dataset_name_t="App53->Time"
+dataset_name_s="AppUT-appnon2new"
 LOG_FILE="logs/finetune/${dataset_name_s}-${dataset_name_t}-$(date +%s).txt"
 # sudo ln -s /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/x86_64-linux-gnu/liblibc.a;
 # python --version;
@@ -29,7 +28,7 @@ python -m z1.framework \
     --projector=linear \
     --linear_output_dim=4096 \
     --train_dir="datasets/finetuning/5/$dataset_name_s/train" \
-    --train_dir_t="datasets/finetuning/5/$dataset_name_t/test" \
+    --train_dir_t="datasets/finetuning/5/$dataset_name_t/tgt" \
     --test_dir="datasets/finetuning/5/$dataset_name_t/test" \
     --save_dir="models/finetuning/${dataset_name_s}-${dataset_name_t}-5" \
     --llm="Qwen3-VL-8B-Instruct" \

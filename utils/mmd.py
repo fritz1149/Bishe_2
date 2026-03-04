@@ -2,16 +2,12 @@ import torch
 import numpy as np
 
 
-def get_MMD(type_, weight_type):
+def get_MMD(type_):
     funcs = {
         'mmd': MMD,
         'lmmd': LMMD,
     }
-    if type_ == 'lmmd':
-        from functools import partial
-        return partial(funcs[type_], weight_type)
     return funcs[type_]
-
 
 def _gaussian_kernel(src_features, tgt_features, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     """计算多核高斯RBF核矩阵，返回 (kernels, n_s, n_t) 或 None（遇到NaN时）"""
@@ -68,7 +64,7 @@ def MMD(batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     ST = kernels[:n_s, n_s:]
     return _compute_mmd_loss(SS, TT, ST, n_s, n_t, norm=True)
 
-def LMMD(weight_type, batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
+def LMMD(batch_s, batch_t, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     src_features = torch.cat([x[0] for x in batch_s], dim=0)   # (N_s, D)
     src_labels = torch.cat([x[1] for x in batch_s], dim=0)     # (N_s,) integer
     tgt_features = torch.cat([x[0] for x in batch_t], dim=0)   # (N_t, D)

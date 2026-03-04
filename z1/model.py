@@ -165,19 +165,20 @@ class ProposeModel(nn.Module, GenerationMixin):
         
         try:
             # 3. 执行前向传播（复用主模型的 forward）
-            result = self.forward(
-                input_ids=input_ids,
-                labels=None,
-                payloads=payloads,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                classifier_labels=classifier_labels,
-                rope_deltas=None
-            )
+            with torch.no_grad():
+                result = self.forward(
+                    input_ids=input_ids,
+                    labels=None,
+                    payloads=payloads,
+                    position_ids=position_ids,
+                    attention_mask=attention_mask,
+                    classifier_labels=classifier_labels,
+                    rope_deltas=None
+                )
             
             output = SimpleNamespace(
-                last_hidden_states=result.last_hidden_states.detach(),
-                logits=result.logits.detach() if result.logits is not None else None
+                last_hidden_states=result.last_hidden_states,
+                logits=result.logits if result.logits is not None else None
             )
         except Exception as e:
             print(f"Error in forward_k: {e}")
