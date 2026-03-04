@@ -128,7 +128,7 @@ def get_grad(model):
         if p.grad is None:
             none_count += 1
             none_positions.append(i)
-            g.append(torch.zeros_like(p).view(-1).contiguous().to('cuda:1'))
+            g.append(None)
         else:
             g.append(torch.as_tensor(p.grad).view(-1).contiguous().to('cuda:1'))
     
@@ -345,6 +345,7 @@ def train(args):
                             grads = compute_and_fuse_grads(model, args.optimizer, dom_loss, gh, mb_src, mb_tgt, args.dom_loss_weight)
                             accum_grads = grads if accum_grads is None else accum_grads + grads
                         # 更新 memory bank
+                        #TODO：探究是否两边的样本都用k_encoder生成比较好
                         if args.momentum_k > 0:
                             with torch.amp.autocast('cuda', dtype=amp_dtype, enabled=args.amp):
                                 k_result = model.forward_k(input_ids, attention_mask, position_ids, payloads)

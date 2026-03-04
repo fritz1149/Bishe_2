@@ -12,6 +12,7 @@ def add(grads1, grads2):
 def _flatten(grads):
     import torch
     parts = [g.reshape(-1) for g in grads if g is not None]
+    assert len(parts) > 0, "parts 长度为0"
     return torch.cat(parts, dim=0) if parts else torch.tensor([])
 
 def _unflatten(flat, grads_ref):
