@@ -203,6 +203,10 @@ class ProposeModel(nn.Module, GenerationMixin):
         return result
 
     def dispatch(self, device_map=None, split_layers_num=25, single_gpu=False):
+        if single_gpu:
+            self.device = torch.device('cuda:0')
+            self = self.to('cuda:0')
+            return
         self.device = torch.device('cuda:0')
         self.encoder = self.encoder.to('cuda:0')
         self.text_embedder = self.text_embedder.to('cuda:0')

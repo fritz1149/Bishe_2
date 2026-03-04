@@ -1377,7 +1377,7 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
             train_pcaps = collect_pcap_names(shifted_label, num_train)
             valtest_pcaps = collect_pcap_names(base_label, num_val + num_test)
             if t_sample_rate:
-                t_pcaps = collect_pcap_names(base_label, num_train)
+                t_pcaps = collect_pcap_names(base_label, num_train*t_sample_rate)
 
             if len(train_pcaps) < 8 or len(valtest_pcaps) < 2:
                 print(f"跳过 {shifted_label}->{base_label}，样本不足")
@@ -1410,7 +1410,7 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
             train_pcaps2 = collect_pcap_names(base_label, num_train)
             valtest_pcaps2 = collect_pcap_names(shifted_label, num_val + num_test)
             if t_sample_rate:
-                t_pcaps2 = collect_pcap_names(shifted_label, num_train)
+                t_pcaps2 = collect_pcap_names(shifted_label, num_train*t_sample_rate)
 
             if len(train_pcaps2) < 8 or len(valtest_pcaps2) < 2:
                 print(f"跳过 {base_label}->{shifted_label}，样本不足")
@@ -1439,6 +1439,49 @@ def generate_finetuning_catalog(preprocess_path: str, dest_path: str, k: int = 5
                 print(f"[orig2shift] {base_label}: 训练集:{len(train_pcaps2)}, 验证集:{len(val_pcaps2)}, 测试集:{len(test_pcaps2)}")
 
             gc.collect()
+
+        # 处理不在pairs中的标签：train/val/test/tgt都从同一个标签目录选取
+        paired_labels = set()
+        for shifted_label, base_label in pairs:
+            paired_labels.add(shifted_label)
+            paired_labels.add(base_label)
+        unpaired_labels = [name for name in label_names if name not in paired_labels]
+
+        if unpaired_labels:
+            print(f"处理 {len(unpaired_labels)} 个不在pairs中的标签: {unpaired_labels}")
+            for label in unpaired_labels:
+                all_pcaps = collect_pcap_names(label, num_train + num_val + num_test + (int(num_train * t_sample_rate) if t_sample_rate else 0))
+                if len(all_pcaps) < 10:
+                    print(f"跳过 {label}，样本不足")
+                    continue
+
+                random.shuffle(all_pcaps)
+                train_pcaps = all_pcaps[:num_train]
+                val_pcaps = all_pcaps[num_train:num_train + num_val]
+                test_pcaps = all_pcaps[num_train + num_val:num_train + num_val + num_test]
+
+                # 写入两个catalog目录（保持一致性）
+                for dest_dir in [dest_path_shift2orig, dest_path_orig2shift]:
+                    label_dest_dir = os.path.join(dest_dir, label)
+                    os.makedirs(label_dest_dir, exist_ok=True)
+
+                    with open(os.path.join(label_dest_dir, "train.txt"), "w", encoding="utf-8") as f:
+                        for pcap_name in train_pcaps:
+                            f.write(pcap_name + "\n")
+                    with open(os.path.join(label_dest_dir, "val.txt"), "w", encoding="utf-8") as f:
+                        for pcap_name in val_pcaps:
+                            f.write(pcap_name + "\n")
+                    with open(os.path.join(label_dest_dir, "test.txt"), "w", encoding="utf-8") as f:
+                        for pcap_name in test_pcaps:
+                            f.write(pcap_name + "\n")
+                    if t_sample_rate:
+                        t_pcaps = all_pcaps[num_train + num_val + num_test:]
+                        with open(os.path.join(label_dest_dir, "tgt.txt"), "w", encoding="utf-8") as f:
+                            for pcap_name in t_pcaps:
+                                f.write(pcap_name + "\n")
+
+                print(f"[unpaired] {label}: 训练集:{len(train_pcaps)}, 验证集:{len(val_pcaps)}, 测试集:{len(test_pcaps)}")
+                gc.collect()
 
         print(f"shift_prefix模式完成，两个catalog已保存到:\n  {dest_path_shift2orig}\n  {dest_path_orig2shift}")
         return
@@ -1582,7 +1625,7 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
     print("=" * 60)
 
     use_catalog = catalog_path and catalog_path.strip()
-    split_names = ["train", "val", "test"]
+    split_names = ["train", "val", "test", "tgt"]
 
     print(f"📂 预处理路径: {preprocess_path}")
     print(f"📂 目标路径: {dest_path}")
@@ -1594,7 +1637,7 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
     # 确保目标目录存在
     for split in split_names:
         os.makedirs(os.path.join(dest_path, split), exist_ok=True)
-    print(f"✅ 已创建目标目录: {dest_path}/[train|val|test]")
+    print(f"✅ 已创建目标目录: {dest_path}/[train|val|test|tgt]")
 
     # 获取所有label名称
     if use_catalog:
@@ -1643,7 +1686,7 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
     prompt2_ids = _str_to_ids(prompt2, type="qwen3vl")[0]
     print("✅ Prompt模板准备完成")
 
-    total_samples = {"train": 0, "val": 0, "test": 0}
+    total_samples = {"train": 0, "val": 0, "test": 0, "tgt": 0}
 
     def process_txt_files(txt_filepaths, label, label_ids, dataset_name):
         """处理一组txt文件，生成样本并保存"""
@@ -1738,10 +1781,14 @@ def generate_finetuning_dataset(preprocess_path: str, catalog_path: str = "", de
             assert os.path.exists(catalog_label_dir) and os.path.isdir(catalog_label_dir), f"catalog目录不存在: {catalog_label_dir}"
             assert os.path.exists(label_dir) and os.path.isdir(label_dir), f"label目录不存在: {label_dir}"
 
-            for catalog_filename, dataset_name in [("train.txt", "train"), ("val.txt", "val"), ("test.txt", "test")]:
+            for catalog_filename, dataset_name in [("train.txt", "train"), ("val.txt", "val"), ("test.txt", "test"), ("tgt.txt", "tgt")]:
                 catalog_file = os.path.join(catalog_label_dir, catalog_filename)
+                if not os.path.exists(catalog_file):
+                    print(f"  ⚠️ catalog文件不存在，跳过: {catalog_file}")
+                    continue
                 with open(catalog_file, "r", encoding="utf-8") as f:
                     pcap_names = [line.strip() for line in f if line.strip()]
+                print(f"  📂 从 {catalog_filename} 读取到 {len(pcap_names)} 个pcap文件名")
                 txt_filepaths = []
                 for pcap_name in pcap_names:
                     txt_filename = pcap_name.rsplit('.', 1)[0] + ".txt"

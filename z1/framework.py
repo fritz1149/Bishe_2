@@ -495,7 +495,7 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
         init_distributed(args)
         from z1.model import ProposeModel
         model = ProposeModel(args)
-        model.dispatch(split_layers_num=args.split_layers_num)
+        model.dispatch(split_layers_num=args.split_layers_num, single_gpu=args.single_gpu)
         model.resume(args)
     else:
         model.backbone.gradient_checkpointing_disable()
