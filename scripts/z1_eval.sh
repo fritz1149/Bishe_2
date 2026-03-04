@@ -2,20 +2,18 @@
 source /opt/anaconda3/etc/profile.d/conda.sh
 conda activate bishe
 # cd Bishe_2
-dataset_names=(
-    "AppUT-appnon2new"
-    "AppUT-appnew2non"
-)
+dataset_name="AppUT-appnon2new"
+checkpoints=(0 1 2)
 
-for dataset_name in "${dataset_names[@]}"; do
-    LOG_FILE="logs/finetune/${dataset_name}-$(date +%s)_$$.txt"
+for i in "${checkpoints[@]}"; do
+    LOG_FILE="logs/finetune/${dataset_name}-eval-$(date +%s)_$$.txt"
     mkdir -p "$(dirname "$LOG_FILE")"
     (
         trap 'rc=$?; echo "[EXIT] $(date -Is) inference finished, exit_code=$rc, log=$LOG_FILE"' EXIT
         # sudo ln -s /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/x86_64-linux-gnu/liblibc.a;
         # python --version;
         python -m z1.framework \
-            --finetune_mode \
+            --eval_mode \
             --split_layers_num=20 \
             --amp \
             --amp_dtype=bf16 \
@@ -26,6 +24,7 @@ for dataset_name in "${dataset_names[@]}"; do
             --resume_encoder=models/encoder/90000/best_checkpoint.pt \
             --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
             --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \
+            --resume_lora1=models/finetuning/${dataset_name}-5/checkpoint-${i}.pt \
             --projector=linear \
             --linear_output_dim=4096 \
             --train_dir="datasets/finetuning/5/$dataset_name/train" \

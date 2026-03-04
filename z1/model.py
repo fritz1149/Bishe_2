@@ -14,6 +14,9 @@ import sys
 def get_llm(args):
     torch_dtype = getattr(args, 'torch_dtype', None)
     attn_implementation = "flash_attention_2" if getattr(args, 'flash_attn', False) else "eager"
+    if torch_dtype is None and attn_implementation == "flash_attention_2":
+        amp_dtype = getattr(args, 'amp_dtype', 'bf16')
+        torch_dtype = torch.bfloat16 if amp_dtype == 'bf16' else torch.float16
     model = Qwen3VLForConditionalGeneration.from_pretrained(
         args.llm, trust_remote_code=True,
         torch_dtype=torch_dtype,
