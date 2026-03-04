@@ -15,6 +15,8 @@ for i in "${checkpoints[@]}"; do
         python -m z1.framework \
             --eval_mode \
             --split_layers_num=20 \
+            --single_gpu \
+            --classifier_mode \
             --amp \
             --amp_dtype=bf16 \
             --flash_attn \

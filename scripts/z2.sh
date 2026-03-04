@@ -7,7 +7,7 @@ conda activate bishe
 CUDA_VISIBLE_DEVICES=${1:-0}
 export CUDA_VISIBLE_DEVICES
 
-dataset_name="AppUT-appnew2non"
+dataset_name="AppUT-appnon2new"
 LOG_FILE="logs/finetune/z2-${dataset_name}-$(date +%s)_$$.txt"
 mkdir -p "$(dirname "$LOG_FILE")"
 exec > >(tee -a "$LOG_FILE") 2>&1

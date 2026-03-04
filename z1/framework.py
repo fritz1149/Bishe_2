@@ -508,6 +508,7 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
     if model is None:
         init_distributed(args)
         from z1.model import ProposeModel
+        args.labels = _get_labels(args.train_dir)
         model = ProposeModel(args)
         model.dispatch(split_layers_num=args.split_layers_num, single_gpu=args.single_gpu)
         model.resume(args)
@@ -543,8 +544,8 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
                         rope_deltas=None
                     )
                 if args.z2_mode or args.classifier_mode:
-                    loss_list.append(result["loss"].item())
-                    all_preds.extend(result["logits"].argmax(dim=-1).cpu().tolist())
+                    loss_list.append(result.loss.item())
+                    all_preds.extend(result.logits.argmax(dim=-1).cpu().tolist())
                     all_gts.extend(model.label2id[x] for x in labels)
                 else:
                     loss_list.append(result.loss.item())
@@ -716,7 +717,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.eval_mode or args.test_mode:
-        eval(args, None, False, False)
+        eval(args, None, False, True)
     elif args.finetune_mode or args.align1_mode or args.align2_mode:
         train(args)
     else:

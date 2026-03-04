@@ -3,10 +3,12 @@ source /opt/anaconda3/etc/profile.d/conda.sh
 conda activate bishe
 # cd Bishe_2
 dataset_names=(
-    "AppUT-appnon2new"
+    "App53-Time"
 )
 CUDA_VISIBLE_DEVICES=${1:-0}
 export CUDA_VISIBLE_DEVICES
+
+
 
 for dataset_name in "${dataset_names[@]}"; do
     LOG_FILE="logs/finetune/${dataset_name}-$(date +%s)_$$.txt"
@@ -24,8 +26,6 @@ for dataset_name in "${dataset_names[@]}"; do
             --amp_dtype=bf16 \
             --flash_attn \
             --base_lr=1e-4 \
-            --stop_epochs=4 \
-            --eval_epochs=4 \
             --resume_encoder=models/encoder/90000/best_checkpoint.pt \
             --resume_lora0=models/alignment1/3mixed/300/best_checkpoint.pt \
             --resume_linear=models/alignment2/3mixed/1800-500/best_checkpoint.pt \

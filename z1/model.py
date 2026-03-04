@@ -100,6 +100,8 @@ class ProposeModel(nn.Module, GenerationMixin):
             self.backbone = backbone
             label_num = len(args.labels)
             self.label2id = {label: idx for idx, label in enumerate(sorted(args.labels))}
+            # self.id2label = {idx: label for label, idx in self.label2id.items()}
+
             hidden_size = args.linear_output_dim
             self.classifier = nn.Linear(hidden_size, label_num)
             import torch.nn.init as init
