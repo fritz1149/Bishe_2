@@ -4,7 +4,6 @@ conda activate bishe
 # cd Bishe_2
 dataset_names=(
     "AppUT-appnon2new"
-    "AppUT-appnew2non"
 )
 
 for dataset_name in "${dataset_names[@]}"; do
@@ -17,6 +16,7 @@ for dataset_name in "${dataset_names[@]}"; do
         python -m z1.framework \
             --finetune_mode \
             --split_layers_num=20 \
+            --single_gpu \
             --amp \
             --amp_dtype=bf16 \
             --flash_attn \

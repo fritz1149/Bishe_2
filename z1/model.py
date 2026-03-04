@@ -208,7 +208,11 @@ class ProposeModel(nn.Module, GenerationMixin):
     def dispatch(self, device_map=None, split_layers_num=25, single_gpu=False):
         if single_gpu:
             self.device = torch.device('cuda:0')
-            self = self.to('cuda:0')
+            self.encoder = self.encoder.to('cuda:0')
+            self.text_embedder = self.text_embedder.to('cuda:0')
+            self.backbone = self.backbone.to('cuda:0')
+            if hasattr(self, 'classifier'):
+                self.classifier = self.classifier.to('cuda:0')
             return
         self.device = torch.device('cuda:0')
         self.encoder = self.encoder.to('cuda:0')
@@ -380,6 +384,9 @@ class ProposeModel(nn.Module, GenerationMixin):
         #     print()
         # print()
         # sys.stdout.flush()
+        position_ids = position_ids.to(inputs_embeds.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(inputs_embeds.device)
         result: Qwen3VLCausalLMOutputWithPast = self.backbone(
             input_ids=None,
             attention_mask=attention_mask, 
