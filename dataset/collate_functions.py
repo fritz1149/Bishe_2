@@ -262,20 +262,26 @@ def collate_LLMDataset_classifier(batch):
 
     input_ids = []
     target_labels = []
-    for x in x_ids:
+    for i, x in enumerate(x_ids):
+        x_len = len(x)
         input_seq = list(x)
-        pad_len = max_seq_len - len(input_seq)
+        pad_len = max_seq_len - x_len
         input_seq += [PAD_ID] * pad_len
         input_ids.append(input_seq)
         # classifier_mode 不需要 labels_ids，填充 -100
         target_labels.append([-100] * max_seq_len)
+        # 截取 position_ids 到 x_ids 长度，去掉 y_ids 部分
+        position_ids[i] = position_ids[i][:, :x_len]
 
     input_ids = torch.tensor(input_ids)
     labels_ids = torch.tensor(target_labels)
     
+    # 根据截取后的 position_ids 添加 padding 部分
     for i, position_ids_ in enumerate(position_ids):
         start = position_ids_.max().item() + 1
-        position_ids[i] = torch.cat([position_ids_, torch.arange(start, start + max_seq_len - position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
+        pad_len = max_seq_len - position_ids_.shape[1]
+        if pad_len > 0:
+            position_ids[i] = torch.cat([position_ids_, torch.arange(start, start + pad_len).unsqueeze(0).expand(3, -1)], dim=1)
     position_ids = torch.stack(position_ids, dim=1)
     attention_mask = (input_ids != PAD_ID).long()
     

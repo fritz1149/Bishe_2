@@ -27250,3 +27250,999 @@ Epoch: 4, Step: 25376, Loss: 0.0000, Time: 40.35s LR:  [1.3316907380055208e-05]
 Epoch: 5, Step: 57024, Loss: 0.0000, Time: 25.13s LR:  [5.383595140634093e-05]
 已终止
 [EXIT] 2026-03-05T18:16:30+08:00 inference finished, exit_code=143, log=logs/finetune/App53-Time-1772659037_2506723.txt
+`torch_dtype` is deprecated! Use `dtype` instead!
+Not using distributed mode!
+finetune_mode: True
+align1_mode: False
+align2_mode: False
+eval_mode: False
+test_mode: False
+z2_mode: True
+classifier_mode: False
+wo_weight_mode: False
+tllm_mode: False
+gh: gh++
+lambda_: 0.5
+dom_loss: lmmd
+dom_loss_weight: None
+memory_bank: True
+momentum_k: 0.0
+queue_size: 128
+train_dir: datasets/finetuning/5/AppUT-appnon2new/train
+train_dir_t: datasets/finetuning/5/AppUT-appnon2new/tgt
+batch_size_t: 1
+test_dir: datasets/finetuning/5/AppUT-appnon2new/test
+save_dir: models/finetuning/AppUT-appnon2new-5
+log_freq: 16
+save_freq: 10
+full_eval_epochs: None
+eval_epochs: [2, 4, 6, 8]
+resume_encoder: models/encoder/90000/best_checkpoint.pt
+resume_linear: models/alignment2/3mixed/1800-500/best_checkpoint.pt
+resume_lora0: models/alignment1/3mixed/300/best_checkpoint.pt
+resume_lora1: 
+resume_log: False
+not_use_rope_deltas: False
+seed: 117567607
+epochs: 10
+stop_epochs: 1000
+batch_size: 1
+base_lr: 2e-05
+beta_0: 0.9
+beta_1: 0.999
+eps: 1e-08
+wd: 0.0001
+warmup: 0.1
+error_scheduler: False
+ignore_passed: False
+constant: False
+reduce_on_plateau: False
+num_cycles: 0.5
+min_lr: None
+accumulation_steps: 16
+projector: linear
+linear_output_dim: 4096
+llm: Qwen3-VL-8B-Instruct
+workers: 1
+device: cuda
+distributed: False
+amp: True
+amp_dtype: bf16
+tf32: False
+split_layers_num: 20
+compile: False
+compile_mode: reduce-overhead
+single_gpu: True
+flash_attn: True
+rank: 0
+world_size: 1
+is_master: True
+gpu: None
+per_device_batch_size: 1
+per_device_batch_size_t: 1
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 84.36it/s]
+ProposeModel(
+  (text_embedder): Embedding(151936, 4096)
+  (encoder): Longformer(
+    (original_model): LongformerModel(
+      (embeddings): LongformerEmbeddings(
+        (word_embeddings): Embedding(151669, 768)
+        (token_type_embeddings): Embedding(1, 768)
+        (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+        (dropout): Dropout(p=0.1, inplace=False)
+        (position_embeddings): Embedding(4098, 768, padding_idx=1)
+      )
+      (encoder): LongformerEncoder(
+        (layer): ModuleList(
+          (0-11): 12 x LongformerLayer(
+            (attention): LongformerAttention(
+              (self): LongformerSelfAttention(
+                (query): Linear(in_features=768, out_features=768, bias=True)
+                (key): Linear(in_features=768, out_features=768, bias=True)
+                (value): Linear(in_features=768, out_features=768, bias=True)
+                (query_global): Linear(in_features=768, out_features=768, bias=True)
+                (key_global): Linear(in_features=768, out_features=768, bias=True)
+                (value_global): Linear(in_features=768, out_features=768, bias=True)
+              )
+              (output): LongformerSelfOutput(
+                (dense): Linear(in_features=768, out_features=768, bias=True)
+                (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+                (dropout): Dropout(p=0.1, inplace=False)
+              )
+            )
+            (intermediate): LongformerIntermediate(
+              (dense): Linear(in_features=768, out_features=3072, bias=True)
+              (intermediate_act_fn): GELUActivation()
+            )
+            (output): LongformerOutput(
+              (dense): Linear(in_features=3072, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+        )
+      )
+      (pooler): LongformerPooler(
+        (dense): Linear(in_features=768, out_features=768, bias=True)
+        (activation): Tanh()
+      )
+    )
+    (fc): Linear(in_features=768, out_features=4096, bias=True)
+  )
+  (backbone): PeftMixedModel(
+    (base_model): MixedModel(
+      (model): Qwen3VLForConditionalGeneration(
+        (model): Qwen3VLModel(
+          (visual): Identity()
+          (language_model): Qwen3VLTextModel(
+            (embed_tokens): Embedding(151936, 4096)
+            (layers): ModuleList(
+              (0-35): 36 x Qwen3VLTextDecoderLayer(
+                (self_attn): Qwen3VLTextAttention(
+                  (q_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (k_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (v_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (o_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (q_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                  (k_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                )
+                (mlp): Qwen3VLTextMLP(
+                  (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+                  (act_fn): SiLUActivation()
+                )
+                (input_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+                (post_attention_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+              )
+            )
+            (norm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+            (rotary_emb): Qwen3VLTextRotaryEmbedding()
+          )
+        )
+        (lm_head): Linear(in_features=4096, out_features=151936, bias=False)
+      )
+    )
+  )
+  (classifier): Linear(in_features=4096, out_features=14, bias=True)
+)
+正在从 14 个文件中加载数据...
+成功加载 5600 个样本
+未找到 id2label.json（可选）
+正在从 14 个文件中加载数据...
+成功加载 5600 个样本
+未找到 id2label.json（可选）
+Mixed precision (AMP) enabled, dtype=bf16.
+Scheduler: total_steps=3500, warmup_steps=350.0, passed_steps=0
+Epoch 0: dom_loss_weight=0.231059
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/data/changc/Bishe_2/z1/framework.py", line 724, in <module>
+    train(args)
+  File "/data/changc/Bishe_2/z1/framework.py", line 304, in train
+    for step, batch_data in train_iter:
+                            ^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 734, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 1516, in _next_data
+    return self._process_data(data, worker_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 1551, in _process_data
+    data.reraise()
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/_utils.py", line 769, in reraise
+    raise exception
+RuntimeError: Caught RuntimeError in DataLoader worker process 0.
+Original Traceback (most recent call last):
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/_utils/worker.py", line 349, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py", line 55, in fetch
+    return self.collate_fn(data)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/data/changc/Bishe_2/dataset/collate_functions.py", line 278, in collate_LLMDataset_classifier
+    position_ids[i] = torch.cat([position_ids_, torch.arange(start, start + max_seq_len - position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: upper bound and lower bound inconsistent with step sign
+
+[EXIT] 2026-03-05T18:37:54+08:00 inference finished, exit_code=1, log=logs/finetune/AppUT-appnon2new-1772707064.txt
+`torch_dtype` is deprecated! Use `dtype` instead!
+Not using distributed mode!
+finetune_mode: True
+align1_mode: False
+align2_mode: False
+eval_mode: False
+test_mode: False
+z2_mode: False
+classifier_mode: True
+wo_weight_mode: False
+tllm_mode: False
+gh: deactivated
+lambda_: 0.5
+dom_loss: mmd
+dom_loss_weight: None
+memory_bank: False
+momentum_k: 0.0
+queue_size: 256
+train_dir: datasets/finetuning/5/App53-Time/train
+train_dir_t: /datasets/train_t/
+batch_size_t: 1
+test_dir: datasets/finetuning/5/App53-Time/test
+save_dir: models/finetuning/App53-Time-5
+log_freq: 32
+save_freq: 10
+full_eval_epochs: None
+eval_epochs: []
+resume_encoder: models/encoder/90000/best_checkpoint.pt
+resume_linear: models/alignment2/3mixed/1800-500/best_checkpoint.pt
+resume_lora0: models/alignment1/3mixed/300/best_checkpoint.pt
+resume_lora1: 
+resume_log: False
+not_use_rope_deltas: False
+seed: 408734098
+epochs: 10
+stop_epochs: 1000
+batch_size: 1
+base_lr: 0.0001
+beta_0: 0.9
+beta_1: 0.999
+eps: 1e-08
+wd: 0.0001
+warmup: 0.1
+error_scheduler: False
+ignore_passed: False
+constant: False
+reduce_on_plateau: False
+num_cycles: 0.5
+min_lr: None
+accumulation_steps: 16
+projector: linear
+linear_output_dim: 4096
+llm: Qwen3-VL-8B-Instruct
+workers: 1
+device: cuda
+distributed: False
+amp: True
+amp_dtype: bf16
+tf32: False
+split_layers_num: 20
+compile: False
+compile_mode: reduce-overhead
+single_gpu: True
+flash_attn: True
+rank: 0
+world_size: 1
+is_master: True
+gpu: None
+per_device_batch_size: 1
+per_device_batch_size_t: 1
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 84.79it/s]
+ProposeModel(
+  (text_embedder): Embedding(151936, 4096)
+  (encoder): Longformer(
+    (original_model): LongformerModel(
+      (embeddings): LongformerEmbeddings(
+        (word_embeddings): Embedding(151669, 768)
+        (token_type_embeddings): Embedding(1, 768)
+        (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+        (dropout): Dropout(p=0.1, inplace=False)
+        (position_embeddings): Embedding(4098, 768, padding_idx=1)
+      )
+      (encoder): LongformerEncoder(
+        (layer): ModuleList(
+          (0-11): 12 x LongformerLayer(
+            (attention): LongformerAttention(
+              (self): LongformerSelfAttention(
+                (query): Linear(in_features=768, out_features=768, bias=True)
+                (key): Linear(in_features=768, out_features=768, bias=True)
+                (value): Linear(in_features=768, out_features=768, bias=True)
+                (query_global): Linear(in_features=768, out_features=768, bias=True)
+                (key_global): Linear(in_features=768, out_features=768, bias=True)
+                (value_global): Linear(in_features=768, out_features=768, bias=True)
+              )
+              (output): LongformerSelfOutput(
+                (dense): Linear(in_features=768, out_features=768, bias=True)
+                (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+                (dropout): Dropout(p=0.1, inplace=False)
+              )
+            )
+            (intermediate): LongformerIntermediate(
+              (dense): Linear(in_features=768, out_features=3072, bias=True)
+              (intermediate_act_fn): GELUActivation()
+            )
+            (output): LongformerOutput(
+              (dense): Linear(in_features=3072, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+        )
+      )
+      (pooler): LongformerPooler(
+        (dense): Linear(in_features=768, out_features=768, bias=True)
+        (activation): Tanh()
+      )
+    )
+    (fc): Linear(in_features=768, out_features=4096, bias=True)
+  )
+  (backbone): PeftMixedModel(
+    (base_model): MixedModel(
+      (model): Qwen3VLForConditionalGeneration(
+        (model): Qwen3VLModel(
+          (visual): Identity()
+          (language_model): Qwen3VLTextModel(
+            (embed_tokens): Embedding(151936, 4096)
+            (layers): ModuleList(
+              (0-35): 36 x Qwen3VLTextDecoderLayer(
+                (self_attn): Qwen3VLTextAttention(
+                  (q_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (k_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (v_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (o_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (q_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                  (k_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                )
+                (mlp): Qwen3VLTextMLP(
+                  (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+                  (act_fn): SiLUActivation()
+                )
+                (input_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+                (post_attention_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+              )
+            )
+            (norm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+            (rotary_emb): Qwen3VLTextRotaryEmbedding()
+          )
+        )
+        (lm_head): Linear(in_features=4096, out_features=151936, bias=False)
+      )
+    )
+  )
+  (classifier): Linear(in_features=4096, out_features=27, bias=True)
+)
+正在从 27 个文件中加载数据...
+成功加载 10800 个样本
+未找到 id2label.json（可选）
+Mixed precision (AMP) enabled, dtype=bf16.
+Scheduler: total_steps=6750, warmup_steps=675.0, passed_steps=0
+Epoch 0: dom_loss_weight=0.231059
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/data/changc/Bishe_2/z1/framework.py", line 724, in <module>
+    train(args)
+  File "/data/changc/Bishe_2/z1/framework.py", line 304, in train
+    for step, batch_data in train_iter:
+                            ^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 734, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 1516, in _next_data
+    return self._process_data(data, worker_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/dataloader.py", line 1551, in _process_data
+    data.reraise()
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/_utils.py", line 769, in reraise
+    raise exception
+RuntimeError: Caught RuntimeError in DataLoader worker process 0.
+Original Traceback (most recent call last):
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/_utils/worker.py", line 349, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/data/changc/.conda/envs/bishe/lib/python3.12/site-packages/torch/utils/data/_utils/fetch.py", line 55, in fetch
+    return self.collate_fn(data)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/data/changc/Bishe_2/dataset/collate_functions.py", line 278, in collate_LLMDataset_classifier
+    position_ids[i] = torch.cat([position_ids_, torch.arange(start, start + max_seq_len - position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: upper bound and lower bound inconsistent with step sign
+
+[EXIT] 2026-03-05T18:38:11+08:00 inference finished, exit_code=1, log=logs/finetune/App53-Time-1772707077_2618102.txt
+`torch_dtype` is deprecated! Use `dtype` instead!
+Not using distributed mode!
+finetune_mode: True
+align1_mode: False
+align2_mode: False
+eval_mode: False
+test_mode: False
+z2_mode: True
+classifier_mode: False
+wo_weight_mode: False
+tllm_mode: False
+gh: gh++
+lambda_: 0.5
+dom_loss: lmmd
+dom_loss_weight: None
+memory_bank: True
+momentum_k: 0.0
+queue_size: 128
+train_dir: datasets/finetuning/5/AppUT-appnon2new/train
+train_dir_t: datasets/finetuning/5/AppUT-appnon2new/tgt
+batch_size_t: 1
+test_dir: datasets/finetuning/5/AppUT-appnon2new/test
+save_dir: models/finetuning/AppUT-appnon2new-5
+log_freq: 16
+save_freq: 10
+full_eval_epochs: None
+eval_epochs: [2, 4, 6, 8]
+resume_encoder: models/encoder/90000/best_checkpoint.pt
+resume_linear: models/alignment2/3mixed/1800-500/best_checkpoint.pt
+resume_lora0: models/alignment1/3mixed/300/best_checkpoint.pt
+resume_lora1: 
+resume_log: False
+not_use_rope_deltas: False
+seed: 1021251974
+epochs: 10
+stop_epochs: 1000
+batch_size: 1
+base_lr: 2e-05
+beta_0: 0.9
+beta_1: 0.999
+eps: 1e-08
+wd: 0.0001
+warmup: 0.1
+error_scheduler: False
+ignore_passed: False
+constant: False
+reduce_on_plateau: False
+num_cycles: 0.5
+min_lr: None
+accumulation_steps: 16
+projector: linear
+linear_output_dim: 4096
+llm: Qwen3-VL-8B-Instruct
+workers: 1
+device: cuda
+distributed: False
+amp: True
+amp_dtype: bf16
+tf32: False
+split_layers_num: 20
+compile: False
+compile_mode: reduce-overhead
+single_gpu: True
+flash_attn: True
+rank: 0
+world_size: 1
+is_master: True
+gpu: None
+per_device_batch_size: 1
+per_device_batch_size_t: 1
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 85.47it/s]
+ProposeModel(
+  (text_embedder): Embedding(151936, 4096)
+  (encoder): Longformer(
+    (original_model): LongformerModel(
+      (embeddings): LongformerEmbeddings(
+        (word_embeddings): Embedding(151669, 768)
+        (token_type_embeddings): Embedding(1, 768)
+        (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+        (dropout): Dropout(p=0.1, inplace=False)
+        (position_embeddings): Embedding(4098, 768, padding_idx=1)
+      )
+      (encoder): LongformerEncoder(
+        (layer): ModuleList(
+          (0-11): 12 x LongformerLayer(
+            (attention): LongformerAttention(
+              (self): LongformerSelfAttention(
+                (query): Linear(in_features=768, out_features=768, bias=True)
+                (key): Linear(in_features=768, out_features=768, bias=True)
+                (value): Linear(in_features=768, out_features=768, bias=True)
+                (query_global): Linear(in_features=768, out_features=768, bias=True)
+                (key_global): Linear(in_features=768, out_features=768, bias=True)
+                (value_global): Linear(in_features=768, out_features=768, bias=True)
+              )
+              (output): LongformerSelfOutput(
+                (dense): Linear(in_features=768, out_features=768, bias=True)
+                (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+                (dropout): Dropout(p=0.1, inplace=False)
+              )
+            )
+            (intermediate): LongformerIntermediate(
+              (dense): Linear(in_features=768, out_features=3072, bias=True)
+              (intermediate_act_fn): GELUActivation()
+            )
+            (output): LongformerOutput(
+              (dense): Linear(in_features=3072, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+        )
+      )
+      (pooler): LongformerPooler(
+        (dense): Linear(in_features=768, out_features=768, bias=True)
+        (activation): Tanh()
+      )
+    )
+    (fc): Linear(in_features=768, out_features=4096, bias=True)
+  )
+  (backbone): PeftMixedModel(
+    (base_model): MixedModel(
+      (model): Qwen3VLForConditionalGeneration(
+        (model): Qwen3VLModel(
+          (visual): Identity()
+          (language_model): Qwen3VLTextModel(
+            (embed_tokens): Embedding(151936, 4096)
+            (layers): ModuleList(
+              (0-35): 36 x Qwen3VLTextDecoderLayer(
+                (self_attn): Qwen3VLTextAttention(
+                  (q_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (k_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (v_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (o_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (q_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                  (k_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                )
+                (mlp): Qwen3VLTextMLP(
+                  (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+                  (act_fn): SiLUActivation()
+                )
+                (input_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+                (post_attention_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+              )
+            )
+            (norm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+            (rotary_emb): Qwen3VLTextRotaryEmbedding()
+          )
+        )
+        (lm_head): Linear(in_features=4096, out_features=151936, bias=False)
+      )
+    )
+  )
+  (classifier): Linear(in_features=4096, out_features=14, bias=True)
+)
+正在从 14 个文件中加载数据...
+成功加载 5600 个样本
+未找到 id2label.json（可选）
+正在从 14 个文件中加载数据...
+成功加载 5600 个样本
+未找到 id2label.json（可选）
+Mixed precision (AMP) enabled, dtype=bf16.
+Scheduler: total_steps=3500, warmup_steps=350.0, passed_steps=0
+Epoch 0: dom_loss_weight=0.231059
+Input ids are automatically padded to be a multiple of `config.attention_window`: 512
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+Epoch: 0, Step: 0, Loss: 0.3164, Time: 1.68s LR:  [0.0]
+`torch_dtype` is deprecated! Use `dtype` instead!
+Not using distributed mode!
+finetune_mode: True
+align1_mode: False
+align2_mode: False
+eval_mode: False
+test_mode: False
+z2_mode: False
+classifier_mode: True
+wo_weight_mode: False
+tllm_mode: False
+gh: deactivated
+lambda_: 0.5
+dom_loss: mmd
+dom_loss_weight: None
+memory_bank: False
+momentum_k: 0.0
+queue_size: 256
+train_dir: datasets/finetuning/5/App53-Time/train
+train_dir_t: /datasets/train_t/
+batch_size_t: 1
+test_dir: datasets/finetuning/5/App53-Time/test
+save_dir: models/finetuning/App53-Time-5
+log_freq: 32
+save_freq: 10
+full_eval_epochs: None
+eval_epochs: []
+resume_encoder: models/encoder/90000/best_checkpoint.pt
+resume_linear: models/alignment2/3mixed/1800-500/best_checkpoint.pt
+resume_lora0: models/alignment1/3mixed/300/best_checkpoint.pt
+resume_lora1: 
+resume_log: False
+not_use_rope_deltas: False
+seed: 732639236
+epochs: 10
+stop_epochs: 1000
+batch_size: 1
+base_lr: 0.0001
+beta_0: 0.9
+beta_1: 0.999
+eps: 1e-08
+wd: 0.0001
+warmup: 0.1
+error_scheduler: False
+ignore_passed: False
+constant: False
+reduce_on_plateau: False
+num_cycles: 0.5
+min_lr: None
+accumulation_steps: 16
+projector: linear
+linear_output_dim: 4096
+llm: Qwen3-VL-8B-Instruct
+workers: 1
+device: cuda
+distributed: False
+amp: True
+amp_dtype: bf16
+tf32: False
+split_layers_num: 20
+compile: False
+compile_mode: reduce-overhead
+single_gpu: True
+flash_attn: True
+rank: 0
+world_size: 1
+is_master: True
+gpu: None
+per_device_batch_size: 1
+per_device_batch_size_t: 1
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:00<00:00, 86.21it/s]
+ProposeModel(
+  (text_embedder): Embedding(151936, 4096)
+  (encoder): Longformer(
+    (original_model): LongformerModel(
+      (embeddings): LongformerEmbeddings(
+        (word_embeddings): Embedding(151669, 768)
+        (token_type_embeddings): Embedding(1, 768)
+        (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+        (dropout): Dropout(p=0.1, inplace=False)
+        (position_embeddings): Embedding(4098, 768, padding_idx=1)
+      )
+      (encoder): LongformerEncoder(
+        (layer): ModuleList(
+          (0-11): 12 x LongformerLayer(
+            (attention): LongformerAttention(
+              (self): LongformerSelfAttention(
+                (query): Linear(in_features=768, out_features=768, bias=True)
+                (key): Linear(in_features=768, out_features=768, bias=True)
+                (value): Linear(in_features=768, out_features=768, bias=True)
+                (query_global): Linear(in_features=768, out_features=768, bias=True)
+                (key_global): Linear(in_features=768, out_features=768, bias=True)
+                (value_global): Linear(in_features=768, out_features=768, bias=True)
+              )
+              (output): LongformerSelfOutput(
+                (dense): Linear(in_features=768, out_features=768, bias=True)
+                (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+                (dropout): Dropout(p=0.1, inplace=False)
+              )
+            )
+            (intermediate): LongformerIntermediate(
+              (dense): Linear(in_features=768, out_features=3072, bias=True)
+              (intermediate_act_fn): GELUActivation()
+            )
+            (output): LongformerOutput(
+              (dense): Linear(in_features=3072, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+        )
+      )
+      (pooler): LongformerPooler(
+        (dense): Linear(in_features=768, out_features=768, bias=True)
+        (activation): Tanh()
+      )
+    )
+    (fc): Linear(in_features=768, out_features=4096, bias=True)
+  )
+  (backbone): PeftMixedModel(
+    (base_model): MixedModel(
+      (model): Qwen3VLForConditionalGeneration(
+        (model): Qwen3VLModel(
+          (visual): Identity()
+          (language_model): Qwen3VLTextModel(
+            (embed_tokens): Embedding(151936, 4096)
+            (layers): ModuleList(
+              (0-35): 36 x Qwen3VLTextDecoderLayer(
+                (self_attn): Qwen3VLTextAttention(
+                  (q_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (k_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (v_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=1024, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=1024, bias=False)
+                      (1): Linear(in_features=16, out_features=1024, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (o_proj): lora.Linear(
+                    (base_layer): Linear(in_features=4096, out_features=4096, bias=False)
+                    (lora_dropout): ModuleDict(
+                      (0): Dropout(p=0.05, inplace=False)
+                      (1): Dropout(p=0.05, inplace=False)
+                    )
+                    (lora_A): ModuleDict(
+                      (0): Linear(in_features=4096, out_features=16, bias=False)
+                      (1): Linear(in_features=4096, out_features=16, bias=False)
+                    )
+                    (lora_B): ModuleDict(
+                      (0): Linear(in_features=16, out_features=4096, bias=False)
+                      (1): Linear(in_features=16, out_features=4096, bias=False)
+                    )
+                    (lora_embedding_A): ParameterDict()
+                    (lora_embedding_B): ParameterDict()
+                    (lora_magnitude_vector): ModuleDict()
+                  )
+                  (q_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                  (k_norm): Qwen3VLTextRMSNorm((128,), eps=1e-06)
+                )
+                (mlp): Qwen3VLTextMLP(
+                  (gate_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (up_proj): Linear(in_features=4096, out_features=12288, bias=False)
+                  (down_proj): Linear(in_features=12288, out_features=4096, bias=False)
+                  (act_fn): SiLUActivation()
+                )
+                (input_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+                (post_attention_layernorm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+              )
+            )
+            (norm): Qwen3VLTextRMSNorm((4096,), eps=1e-06)
+            (rotary_emb): Qwen3VLTextRotaryEmbedding()
+          )
+        )
+        (lm_head): Linear(in_features=4096, out_features=151936, bias=False)
+      )
+    )
+  )
+  (classifier): Linear(in_features=4096, out_features=27, bias=True)
+)
+正在从 27 个文件中加载数据...
+成功加载 10800 个样本
+未找到 id2label.json（可选）
+Mixed precision (AMP) enabled, dtype=bf16.
+Scheduler: total_steps=6750, warmup_steps=675.0, passed_steps=0
+Epoch 0: dom_loss_weight=0.231059
+Input ids are automatically padded to be a multiple of `config.attention_window`: 512
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+Epoch: 0, Step: 0, Loss: 0.2891, Time: 1.14s LR:  [0.0]

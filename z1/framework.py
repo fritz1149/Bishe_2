@@ -208,7 +208,7 @@ def train(args):
     if args.z2_mode:
         dataset_t = CustomDataset(args.train_dir_t)
         loader_t = torch.utils.data.DataLoader(dataset_t, batch_size=args.per_device_batch_size_t, shuffle=True,
-                    num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
+                    num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_fn)
     model.dispatch(split_layers_num=args.split_layers_num, single_gpu=args.single_gpu)
 
     args.optimizer = torch.optim.AdamW(model.parameters_(), lr=args.base_lr, betas=(args.beta_0, args.beta_1), eps=args.eps, weight_decay=args.wd)
