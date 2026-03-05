@@ -199,10 +199,11 @@ def train(args):
     #     print(name)
     # return
     
-    from dataset import CustomDataset, collate_LLMDataset
+    from dataset import CustomDataset, collate_LLMDataset, collate_LLMDataset_classifier
     dataset = CustomDataset(args.train_dir)
+    collate_fn = collate_LLMDataset_classifier if args.classifier_mode or args.z2_mode else collate_LLMDataset
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=True,
-                num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
+                num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_fn)
     
     if args.z2_mode:
         dataset_t = CustomDataset(args.train_dir_t)
@@ -517,12 +518,13 @@ def eval(args, model = None, loss_only = False, calculate_loss = True):
         model.backbone.disable_input_require_grads()
     model.eval()
 
-    from dataset import CustomDataset, collate_LLMDataset
+    from dataset import CustomDataset, collate_LLMDataset, collate_LLMDataset_classifier
     dataset = CustomDataset(args.test_dir)
     amp_dtype = torch.bfloat16 if args.amp_dtype == 'bf16' else torch.float16
+    collate_fn = collate_LLMDataset_classifier if args.classifier_mode or args.z2_mode else collate_LLMDataset
     if calculate_loss:
         loader = torch.utils.data.DataLoader(dataset, batch_size=args.per_device_batch_size, shuffle=False,
-                    num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_LLMDataset)
+                    num_workers=args.workers, pin_memory=True, drop_last=True, collate_fn=collate_fn)
 
 
         # ===== 第一次遍历：计算loss（+ z2_mode下收集分类预测） =====

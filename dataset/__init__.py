@@ -8,6 +8,7 @@ from .collate_functions import (
     collate_ContrastiveDataset_test2,
     collate_TrafficEmbeddingDataset,
     collate_LLMDataset,
+    collate_LLMDataset_classifier,
     collate_LLMDataset_leftpadding,
 )
 
@@ -20,5 +21,6 @@ __all__ = [
     "collate_ContrastiveDataset_test2",
     "collate_TrafficEmbeddingDataset",
     "collate_LLMDataset",
+    "collate_LLMDataset_classifier",
     "collate_LLMDataset_leftpadding",
 ]

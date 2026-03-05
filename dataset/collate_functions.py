@@ -238,6 +238,56 @@ def collate_LLMDataset(batch):
     return input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas
 
 
+def collate_LLMDataset_classifier(batch):
+    """专用于 classifier_mode 的 collate 函数，不拼接 y_ids（答案），避免数据泄露"""
+    PAD_ID = 151643
+    IMAGE_PAD_ID = 151655
+    x_ids = [item[0][0] for item in batch]
+    payloads = [item[0][2] for item in batch]
+    position_ids = [item[0][3] for item in batch]
+    labels = [item[1] for item in batch]
+
+    for i, item in enumerate(payloads):
+        if len(item) == 0:
+            payloads[i] = None
+            continue
+        payload_ids = torch.tensor([x[0] for x in item])
+        attention_mask = torch.tensor([x[1] for x in item])
+        global_attention_mask = torch.tensor([x[2] for x in item])
+        payloads[i] = (payload_ids, attention_mask, global_attention_mask)
+
+    # 只使用 x_ids，不拼接 y_ids
+    seq_lens = [len(x) for x in x_ids]
+    max_seq_len = max(seq_lens)
+
+    input_ids = []
+    target_labels = []
+    for x in x_ids:
+        input_seq = list(x)
+        pad_len = max_seq_len - len(input_seq)
+        input_seq += [PAD_ID] * pad_len
+        input_ids.append(input_seq)
+        # classifier_mode 不需要 labels_ids，填充 -100
+        target_labels.append([-100] * max_seq_len)
+
+    input_ids = torch.tensor(input_ids)
+    labels_ids = torch.tensor(target_labels)
+    
+    for i, position_ids_ in enumerate(position_ids):
+        start = position_ids_.max().item() + 1
+        position_ids[i] = torch.cat([position_ids_, torch.arange(start, start + max_seq_len - position_ids_.shape[1]).unsqueeze(0).expand(3, -1)], dim=1)
+    position_ids = torch.stack(position_ids, dim=1)
+    attention_mask = (input_ids != PAD_ID).long()
+    
+    assert position_ids.shape[0] == 3
+    assert position_ids.shape[1] == input_ids.shape[0]
+    assert position_ids.shape[2] == max_seq_len and position_ids.shape[2] == input_ids.shape[1]
+
+    rope_deltas = position_ids.max().item() + 1 - input_ids.shape[1]
+
+    return input_ids, labels_ids, payloads, position_ids, attention_mask, labels, rope_deltas
+
+
 def collate_LLMDataset_leftpadding(batch, keep_labels=False):
     PAD_ID = 151643
     IMAGE_PAD_ID = 151655
