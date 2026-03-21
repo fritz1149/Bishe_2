@@ -19,3 +19,4 @@ logs/
 pickle_records/
 **/*.pyc
 **/*.deb
+out/

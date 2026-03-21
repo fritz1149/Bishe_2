@@ -68,20 +68,51 @@ class ProposeModel(nn.Module, GenerationMixin):
             for param in self.encoder.fc.parameters():
                 param.requires_grad = True
         elif args.finetune_mode:
-            # 微调等其他模式，使用peft定义lora，并冻结除lora模块的其他参数
+            # 微调模式：根据 resume 配置决定 adapter 激活和可训练参数
             backbone.add_adapter("1", lora_config)
-            if args.wo_weight_mode or args.tllm_mode:
+            
+            # 判断是否加载各组件权重
+            load_encoder = bool(getattr(args, "resume_encoder", ""))
+            load_lora0 = bool(getattr(args, "resume_lora0", ""))
+            load_linear = bool(getattr(args, "resume_linear", ""))
+            
+            # wo_weight_mode 等效于不加载encoder（encoder+linear可训练）
+            if args.wo_weight_mode:
+                load_encoder = False
+            # tllm_mode 等效于不加载lora0（仅激活lora1）
+            if args.tllm_mode:
+                load_lora0 = False
+            
+            # 约束：不加载encoder时，一定不加载linear
+            if not load_encoder:
+                load_linear = False
+            # 约束：不加载lora0时，一定不加载linear
+            if not load_lora0:
+                load_linear = False
+            
+            # 根据是否加载lora0决定激活哪些adapter
+            if not load_lora0:
                 backbone.set_adapter(["1"])
             else:
                 backbone.set_adapter(["0", "1"])
             self.backbone = backbone
-            # # 冻结除lora参数以外的所有参数
+            
+            # 冻结除lora1参数以外的所有参数
             for name, param in self.named_parameters(recurse=True):
                 if "lora_A.1" not in name and "lora_B.1" not in name:
                     param.requires_grad = False
                 else:
                     param.requires_grad = True
-                if args.wo_weight_mode and "encoder" in name:
+            
+            # 根据是否加载各组件决定可训练参数
+            # 不加载encoder → encoder + linear 可训练
+            if not load_encoder:
+                for name, param in self.named_parameters(recurse=True):
+                    if "encoder" in name:
+                        param.requires_grad = True
+            # 不加载linear → linear 可训练（包括不加载lora0的情况）
+            elif not load_linear:
+                for param in self.encoder.fc.parameters():
                     param.requires_grad = True
         elif args.test_mode:
             self.backbone = backbone
@@ -89,7 +120,12 @@ class ProposeModel(nn.Module, GenerationMixin):
                 param.requires_grad = False
         elif args.eval_mode:
             backbone.add_adapter("1", lora_config)
+            # 判断是否加载lora0，用于决定激活哪些adapter
+            load_lora0 = bool(getattr(args, "resume_lora0", ""))
+            # wo_weight_mode/tllm_mode 等效于不加载lora0
             if args.wo_weight_mode or args.tllm_mode:
+                load_lora0 = False
+            if not load_lora0:
                 backbone.set_adapter(["1"])
             else:
                 backbone.set_adapter(["0", "1"])
@@ -255,6 +291,22 @@ class ProposeModel(nn.Module, GenerationMixin):
                 args._scaler_state_dict = ckpt['scaler']
             else:
                 args._scaler_state_dict = None
+
+        # 约束校验：根据规则强制跳过某些权重加载
+        load_encoder = bool(getattr(args, "resume_encoder", ""))
+        load_lora0 = bool(getattr(args, "resume_lora0", ""))
+        load_linear = bool(getattr(args, "resume_linear", ""))
+        
+        # 约束1：不加载encoder时，一定不加载linear
+        if not load_encoder and load_linear:
+            print("[resume] 约束：不加载encoder时跳过linear加载")
+            args.resume_linear = ""
+            load_linear = False
+        # 约束2：不加载lora0时，一定不加载linear
+        if not load_lora0 and load_linear:
+            print("[resume] 约束：不加载lora0时跳过linear加载")
+            args.resume_linear = ""
+            load_linear = False
 
         if getattr(args, "resume_encoder", None) and args.resume_encoder != "":
             ckpt = torch.load(args.resume_encoder, map_location="cpu", weights_only=True)

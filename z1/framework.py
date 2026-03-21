@@ -188,10 +188,11 @@ def train(args):
     # load model
     from z1.model import ProposeModel
     model = ProposeModel(args)
+    model.resume(args)
     print(model)
-    # print(model.backbone.active_adapters)
-    # for i, name in enumerate(model.named_parameters_names(True)):
-    #     print(i, name)
+    print(model.backbone.active_adapters)
+    for i, name in enumerate(model.named_parameters_names(True)):
+        print(i, name)
     # return 
     # for name in model.parameters_():
     #     print(name)
@@ -218,7 +219,6 @@ def train(args):
     args.start_epoch = 0
     args.best_loss = float("inf")
     args.best_acc = float("-inf")
-    model.resume(args)
     if args.amp:
         print(f"Mixed precision (AMP) enabled, dtype={args.amp_dtype}.")
     # 清理缓存以释放加载优化器状态后可能产生的内存碎片
@@ -439,7 +439,7 @@ def train(args):
         
         # 在eval前清理缓存，释放训练过程中的内存
         torch.cuda.empty_cache()
-        full_eval = (args.full_eval_epochs is not None and (args.epochs - epoch) <= args.full_eval_epochs) or (epoch+1) in args.eval_epochs
+        full_eval = (args.full_eval_epochs is not None and (max_epochs - epoch) <= args.full_eval_epochs) or (epoch+1) in args.eval_epochs
         eval_loss, eval_acc, pre, rec, f1 = eval(args, model, loss_only=not full_eval)
         # eval后清理缓存，释放eval过程中的内存
         torch.cuda.empty_cache()
@@ -665,10 +665,10 @@ def add_args(parser):
     parser.add_argument('--save_freq', type=int, default=10, help="模型保存频率（每多少个epoch保存一次）")
     parser.add_argument('--full_eval_epochs', type=int, default=None, help="最后多少个epoch进行完整eval（含generate推理），其余epoch仅计算eval loss")
     parser.add_argument('--eval_epochs', type=int, nargs='+', default=[], help="评估频率（指定在哪些epoch进行评估）")
-    parser.add_argument('--resume_encoder', type=str, default="", help="是否从checkpoint恢复encoder")
-    parser.add_argument('--resume_linear', type=str, default="", help="是否从checkpoint恢复linear层")
-    parser.add_argument('--resume_lora0', type=str, default="", help="是否从checkpoint恢复lora0")
-    parser.add_argument('--resume_lora1', type=str, default="", help="是否从checkpoint恢复lora1")
+    parser.add_argument('--resume_encoder', type=str, default="", help="从checkpoint恢复encoder（不加载时encoder+linear可训练，且linear不会被加载）")
+    parser.add_argument('--resume_linear', type=str, default="", help="从checkpoint恢复linear层（不加载时linear可训练；会被encoder/lora0约束覆盖）")
+    parser.add_argument('--resume_lora0', type=str, default="", help="从checkpoint恢复lora0（不加载时仅激活lora1，且linear不会被加载）")
+    parser.add_argument('--resume_lora1', type=str, default="", help="从checkpoint恢复lora1")
     parser.add_argument('--resume_log', action='store_true', default=False, help="是否输出resume日志")
     parser.add_argument('--not_use_rope_deltas', action='store_true', default=False, help="是否不使用rope deltas")
     #train
